@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bulk File Generator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect x=%272%27 y=%272%27 width=%2720%27 height=%2720%27 rx=%275%27 fill=%27%231f6e43%27/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f4f5f2;
+    --card: #ffffff;
+    --ink: #1c2321;
+    --muted: #66706c;
+    --line: #dfe3df;
+    --line-strong: #c9cfca;
+    --accent: #1f6e43;
+    --accent-ink: #ffffff;
+    --accent-soft: #e6f1ea;
+    --warn: #b42318;
+    --warn-soft: #fdecea;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+    --sans: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141816; --card: #1c211f; --ink: #e7ebe8; --muted: #9aa49f;
+      --line: #2c3330; --line-strong: #3a423e; --accent: #4cae78; --accent-ink: #0d1a12;
+      --accent-soft: #1f3328; --warn: #f2786b; --warn-soft: #3a1f1c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 14.5px/1.5 var(--sans); }
+  header.top {
+    max-width: 880px; margin: 0 auto; padding: 28px 20px 8px;
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 38px; height: 38px; border-radius: 9px; background: var(--accent);
+    display: grid; place-items: center; color: var(--accent-ink);
+  }
+  h1 { font-size: 21px; margin: 0; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 2px 0 0; }
+  .quit { background: none; border: 1px solid var(--line-strong); color: var(--muted);
+    border-radius: 7px; padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; }
+  .quit:hover { color: var(--ink); border-color: var(--muted); }
+
+  main { max-width: 880px; margin: 0 auto; padding: 8px 20px 60px; }
+  .step {
+    background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+    margin-top: 14px; display: grid; grid-template-columns: 44px 1fr; overflow: hidden;
+  }
+  .step[hidden] { display: none; }
+  .num {
+    border-right: 1px solid var(--line); display: flex; justify-content: center;
+    padding-top: 18px; font: 600 13px var(--mono); color: var(--muted);
+  }
+  .step.done .num { color: var(--accent); }
+  .body { padding: 16px 20px 20px; min-width: 0; }
+  .step h2 { font-size: 15px; margin: 0 0 2px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+
+  label.f { display: block; font-size: 12.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+  select, input[type=text], input[type=number], input[type=date] {
+    width: 100%; font: inherit; color: var(--ink); background: var(--card);
+    border: 1px solid var(--line-strong); border-radius: 7px; padding: 8px 10px; min-height: 38px;
+  }
+  select:focus, input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  input.bad { border-color: var(--warn); }
+  .mono { font-family: var(--mono); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 620px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+  .narrow { max-width: 420px; }
+
+  .err { color: var(--warn); font-size: 12.5px; margin-top: 5px; }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+  .note code, .pill { font-family: var(--mono); font-size: 12px; background: var(--accent-soft);
+    color: var(--ink); padding: 1px 6px; border-radius: 5px; }
+
+  /* upload */
+  .drop {
+    border: 1.5px dashed var(--line-strong); border-radius: var(--radius); padding: 26px;
+    text-align: center; cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .drop strong { color: var(--accent); }
+  .file-chip { display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--accent-soft); }
+  .file-chip .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-chip .meta { color: var(--muted); font-size: 12.5px; margin-left: auto; white-space: nowrap; }
+  .linkbtn { background: none; border: 0; color: var(--accent); font: inherit; font-size: 13px;
+    cursor: pointer; padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+  .preview { margin-top: 12px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; max-height: 260px; }
+  table.sheet { border-collapse: collapse; font-size: 12.5px; min-width: 100%; }
+  table.sheet th, table.sheet td { border: 1px solid var(--line); padding: 4px 8px; white-space: nowrap;
+    max-width: 220px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  table.sheet th { background: var(--bg); color: var(--muted); font-weight: 600; font-family: var(--mono);
+    position: sticky; top: 0; }
+  table.sheet td.rn { background: var(--bg); color: var(--muted); font-family: var(--mono); text-align: right; }
+
+  /* rules */
+  .rule { border: 1px solid var(--line); border-radius: 9px; padding: 14px; margin-bottom: 12px; }
+  .rule-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .rule-head b { font-size: 13.5px; }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; margin: 12px 0 10px; }
+  .seg button { border: 0; background: var(--card); color: var(--muted); font: inherit; font-size: 13px;
+    padding: 7px 14px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line-strong); }
+  .seg button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  .addbtn { width: 100%; border: 1.5px dashed var(--line-strong); background: none; color: var(--accent);
+    border-radius: 9px; padding: 10px; font: inherit; font-weight: 600; cursor: pointer; }
+  .addbtn:hover { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* generate */
+  .check { display: flex; align-items: center; gap: 8px; margin: 12px 0 2px; font-size: 13.5px; }
+  .counters { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 14px; padding: 10px 12px;
+    background: var(--bg); border-radius: 8px; font-size: 12.5px; color: var(--muted); }
+  .counters b { color: var(--ink); font-family: var(--mono); font-weight: 600; }
+  .primary {
+    width: 100%; margin-top: 16px; background: var(--accent); color: var(--accent-ink); border: 0;
+    border-radius: 9px; padding: 12px; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  .primary:disabled { opacity: .45; cursor: not-allowed; }
+  .todo { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+
+  .progress { height: 10px; background: var(--bg); border-radius: 99px; overflow: hidden; border: 1px solid var(--line); }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .25s; }
+  .stage { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 14px 0; }
+  @media (max-width: 620px) { .metrics { grid-template-columns: 1fr 1fr; } }
+  .metric { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+  .metric span { display: block; color: var(--muted); font-size: 12px; }
+  .metric b { font: 600 19px var(--mono); }
+  .metric.total { background: var(--accent-soft); border-color: transparent; }
+  .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+  .btn { border: 1px solid var(--line-strong); background: var(--card); color: var(--ink); border-radius: 8px;
+    padding: 9px 14px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; font-size: 13.5px; }
+  .btn.solid { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .banner { padding: 10px 12px; border-radius: 8px; font-size: 13.5px; }
+  .banner.ok { background: var(--accent-soft); }
+  .banner.bad { background: var(--warn-soft); color: var(--warn); white-space: pre-wrap; }
+  .details { font-size: 12.5px; color: var(--muted); }
+  .details div { margin-top: 3px; }
+  footer { max-width: 880px; margin: 0 auto; padding: 0 20px 30px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <div class="logo" aria-hidden="true">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="13" height="16" rx="2"/><path d="M8 21h11a2 2 0 0 0 2-2V8"/><path d="M8 8h5M8 12h5"/></svg>
+    </div>
+    <div>
+      <h1>Bulk File Generator</h1>
+      <p class="sub">Create many Excel files from one template, with unique TxnIDs and fixed values.</p>
+    </div>
+  </div>
+  <button class="quit" id="quitBtn" title="Stop the app">Quit app</button>
+</header>
+
+<main>
+  <!-- 1 project -->
+  <section class="step" id="s1">
+    <div class="num">01</div>
+    <div class="body">
+      <h2>Project</h2>
+      <p class="hint">Each project keeps its own file-number and TxnID counters.</p>
+      <div class="narrow"><select id="project"><option value="">Select a project…</option></select></div>
+    </div>
+  </section>
+
+  <!-- 2 task -->
+  <section class="step" id="s2" hidden>
+    <div class="num">02</div>
+    <div class="body">
+      <h2>Task</h2>
+      <p class="hint">What do you want to do?</p>
+      <div class="narrow"><select id="task"><option value="">Select a task…</option></select></div>
+    </div>
+  </section>
+
+  <!-- 3 extension -->
+  <section class="step" id="s3" hidden>
+    <div class="num">03</div>
+    <div class="body">
+      <h2>File extension</h2>
+      <p class="hint">The type of file the template is, and the type that will be generated.</p>
+      <div class="narrow"><select id="ext"><option value="">Select an extension…</option></select></div>
+    </div>
+  </section>
+
+  <!-- 4 upload -->
+  <section class="step" id="s4" hidden>
+    <div class="num">04</div>
+    <div class="body">
+      <h2>Upload template</h2>
+      <p class="hint">Every generated file is an exact copy of this template (all sheets, formatting and formulas). Only the cells you choose in step 6 are changed, on the sheet that was open when the template was last saved.</p>
+      <div id="dropZone" class="drop" tabindex="0">
+        <div><strong>Choose a file</strong> or drag it here</div>
+        <div class="note" id="dropHint">.xlsx only</div>
+      </div>
+      <input type="file" id="fileInput" hidden>
+      <div id="fileInfo" hidden></div>
+      <div class="err" id="uploadErr"></div>
+    </div>
+  </section>
+
+  <!-- 5 batch -->
+  <section class="step" id="s5" hidden>
+    <div class="num">05</div>
+    <div class="body">
+      <h2>Batch settings</h2>
+      <p class="hint">How many files to create and how to name them.</p>
+      <div class="grid2">
+        <div>
+          <label class="f" for="nFiles">Total files to create</label>
+          <input type="number" id="nFiles" min="1" step="1" value="500" class="mono">
+          <div class="err" id="nFilesErr"></div>
+        </div>
+        <div>
+          <label class="f" for="prefix">Naming prefix for files</label>
+          <input type="text" id="prefix" class="mono" placeholder="e.g. BATCH_NOV" autocomplete="off">
+          <div class="err" id="prefixErr"></div>
+          <div class="note" id="prefixNote">Letters, numbers and underscore, up to 13 characters.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 columns -->
+  <section class="step" id="s6" hidden>
+    <div class="num">06</div>
+    <div class="body">
+      <h2>Columns to update</h2>
+      <p class="hint">For each column, choose the rows and what to write: a unique TxnID per row, or a fixed date.</p>
+      <div id="rules"></div>
+      <button class="addbtn" id="addRule">+ Add column</button>
+    </div>
+  </section>
+
+  <!-- 7 generate -->
+  <section class="step" id="s7" hidden>
+    <div class="num">07</div>
+    <div class="body">
+      <h2>Generate</h2>
+      <p class="hint">Files are written to this folder on your computer.</p>
+      <label class="f" for="outDir">Output folder</label>
+      <input type="text" id="outDir" class="mono">
+      <label class="check"><input type="checkbox" id="parallel" checked> Use all CPU cores (faster for big batches)</label>
+      <div class="counters" id="counters"></div>
+      <button class="primary" id="genBtn" disabled>Generate files</button>
+      <ul class="todo" id="todo"></ul>
+
+      <div id="run" hidden style="margin-top:18px">
+        <div class="progress"><div id="bar"></div></div>
+        <div class="stage"><span id="stageText">Starting…</span><span id="countText" class="mono"></span></div>
+      </div>
+      <div id="result" hidden style="margin-top:16px"></div>
+    </div>
+  </section>
+</main>
+<footer id="foot"></footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { config: null, tracker: null, upload: null, rules: [], nextRuleId: 1, job: null, running: false };
+const DATE_FORMATS = { "dd/mm/yyyy": "d/m/Y", "mm/dd/yyyy": "m/d/Y", "yyyy-mm-dd": "Y-m-d" };
+const NAME_RE = /^[A-Za-z0-9_]+$/;
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null) n.setAttribute(k, v);
+  }
+  for (const kid of kids) if (kid != null) n.append(kid);
+  return n;
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(data.error || (data.errors || []).join("\n") || r.statusText), { data });
+  return data;
+}
+function colLetter(n) { let s = ""; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function colIndex(s) { let n = 0; for (const ch of s.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
+function fmt(n) { return Number(n).toLocaleString("en-IN"); }
+
+/* ---------- validation (mirrors bulk_engine.py) ---------- */
+function nameErr(v, max, min = 1) {
+  if (!v || v.length < min || v.length > max) return min > 1 ? `Must be ${min}-${max} characters.` : `Must be between 1 and ${max} characters.`;
+  if (!NAME_RE.test(v)) return "No special characters allowed (except underscore '_').";
+  return null;
+}
+function ruleErrors(r, seen) {
+  const e = {};
+  const col = r.col.trim();
+  if (!col || !/^[A-Za-z]+$/.test(col)) e.col = "Letters only (e.g. A, B, AA).";
+  else if (colIndex(col) > 16384) e.col = "Beyond Excel's last column (XFD).";
+  else if (seen && seen.has(col.toUpperCase())) e.col = `Column ${col.toUpperCase()} is used twice.`;
+  const s = Number(r.start), en = Number(r.end);
+  if (!Number.isInteger(s) || s < 1) e.start = "Positive whole number.";
+  if (!Number.isInteger(en) || en < 1) e.end = "Positive whole number.";
+  if (!e.start && !e.end && s > en) e.end = "End row is before start row.";
+  if (r.mode === "STRING_SEQ") {
+    const L = state.config.limits;
+    const pe = nameErr(r.txnPrefix, L.txn_max, L.txn_min);
+    if (pe) e.txn = pe;
+  } else if (!r.date) e.date = "Pick a date.";
+  return e;
+}
+function dateString(r) {
+  if (!r.date) return "";
+  const [Y, m, d] = r.date.split("-");
+  return DATE_FORMATS[r.dateFmt].replace("Y", Y).replace("m", m).replace("d", d);
+}
+
+/* ---------- step flow ---------- */
+function show(id, on) { $(id).hidden = !on; }
+function markDone(id, on) { $(id).classList.toggle("done", !!on); }
+
+function refreshFlow() {
+  const p = $("project").value, t = $("task").value, x = $("ext").value;
+  markDone("s1", p); show("s2", !!p);
+  markDone("s2", p && t); show("s3", !!(p && t));
+  markDone("s3", p && t && x); show("s4", !!(p && t && x));
+  const up = !!(p && t && x && state.upload);
+  markDone("s4", up);
+  ["s5", "s6", "s7"].forEach((s) => show(s, up));
+  if (up) validateAll();
+}
+
+async function init() {
+  try {
+    state.config = await api("/api/config");
+  } catch (e) {
+    document.body.innerHTML = `<p style="padding:40px">Could not reach the app. Is it still running?</p>`;
+    return;
+  }
+  for (const p of state.config.projects) $("project").append(el("option", { value: p }, p));
+  $("foot").textContent = `Projects and tasks come from ${state.config.config_path}. Edit that file to change the dropdowns.`;
+  $("prefixNote").textContent = `Letters, numbers and underscore, up to ${state.config.limits.prefix_max} characters.`;
+  refreshFlow();
+}
+
+$("project").addEventListener("change", async () => {
+  const p = $("project").value;
+  $("task").innerHTML = ""; $("task").append(el("option", { value: "" }, "Select a task…"));
+  if (p) {
+    for (const t of Object.keys(state.config.tasks)) $("task").append(el("option", { value: t }, t));
+    state.tracker = await api(`/api/tracker?project=${encodeURIComponent(p)}`);
+    $("outDir").value = state.tracker.default_output;
+  }
+  $("ext").value = "";
+  clearResult();
+  refreshFlow();
+});
+$("task").addEventListener("change", () => {
+  const t = $("task").value;
+  $("ext").innerHTML = ""; $("ext").append(el("option", { value: "" }, "Select an extension…"));
+  if (t) for (const x of state.config.tasks[t].extensions) $("ext").append(el("option", { value: x }, x));
+  refreshFlow();
+});
+$("ext").addEventListener("change", () => {
+  const x = $("ext").value;
+  $("fileInput").accept = x;
+  $("dropHint").textContent = `${x} only`;
+  if (state.upload && !state.upload.name.toLowerCase().endsWith(x)) removeUpload();
+  refreshFlow();
+});
+
+/* ---------- upload ---------- */
+const drop = $("dropZone");
+drop.addEventListener("click", () => $("fileInput").click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("fileInput").click(); } });
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) uploadFile(e.dataTransfer.files[0]); });
+$("fileInput").addEventListener("change", (e) => { if (e.target.files[0]) uploadFile(e.target.files[0]); e.target.value = ""; });
+
+async function uploadFile(file) {
+  const x = $("ext").value;
+  $("uploadErr").textContent = "";
+  if (!file.name.toLowerCase().endsWith(x)) { $("uploadErr").textContent = `Please choose a ${x} file.`; return; }
+  drop.querySelector("div").textContent = "Reading template…";
+  try {
+    const res = await api("/api/upload", { method: "POST", headers: { "X-Filename": file.name.replace(/[^\x20-\x7E]/g, "_") }, body: file });
+    state.upload = res;
+    renderUpload();
+    if (state.rules.length === 0) addRule();
+    else state.rules.forEach((r) => { if (r.endTouched !== true) r.end = Math.max(2, res.max_row); });
+    renderRules();
+    clearResult();
+  } catch (e) {
+    $("uploadErr").textContent = e.message;
+  } finally {
+    drop.querySelector("div").innerHTML = "<strong>Choose a file</strong> or drag it here";
+  }
+  refreshFlow();
+}
+function removeUpload() { state.upload = null; $("fileInput").value = ""; renderUpload(); refreshFlow(); }
+function renderUpload() {
+  const info = $("fileInfo");
+  info.innerHTML = "";
+  drop.hidden = !!state.upload; info.hidden = !state.upload;
+  if (!state.upload) return;
+  const u = state.upload;
+  info.append(el("div", { class: "file-chip" },
+    el("span", { class: "name" }, u.name),
+    el("span", { class: "meta" }, `Sheet "${u.sheet}" · ${fmt(u.max_row)} rows × ${u.max_col} columns`),
+    el("button", { class: "linkbtn", onclick: () => removeUpload() }, "Replace")));
+  if (u.rows.length) {
+    const cols = Math.max(...u.rows.map((r) => r.length));
+    const head = el("tr", {}, el("th", {}, ""));
+    for (let c = 1; c <= cols; c++) head.append(el("th", {}, colLetter(c)));
+    const tbody = el("tbody");
+    u.rows.forEach((row, i) => {
+      const tr = el("tr", {}, el("td", { class: "rn" }, String(i + 1)));
+      for (let c = 0; c < cols; c++) tr.append(el("td", { title: row[c] || "" }, row[c] || ""));
+      tbody.append(tr);
+    });
+    info.append(el("div", { class: "preview" }, el("table", { class: "sheet" }, el("thead", {}, head), tbody)));
+    if (u.max_row > u.rows.length) info.append(el("div", { class: "note" }, `Showing the first ${u.rows.length} rows.`));
+  }
+}
+
+/* ---------- rules ---------- */
+function addRule() {
+  const today = new Date();
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  state.rules.push({ id: state.nextRuleId++, col: "", start: 2, end: Math.max(2, state.upload ? state.upload.max_row : 2),
+    mode: "STRING_SEQ", txnPrefix: "", date: iso, dateFmt: "dd/mm/yyyy", touched: {} });
+  renderRules();
+}
+$("addRule").addEventListener("click", () => { addRule(); validateAll(); });
+
+function renderRules() {
+  const box = $("rules");
+  box.innerHTML = "";
+  state.rules.forEach((r, i) => {
+    const touch = (k) => { r.touched[k] = true; };
+    const input = (key, attrs, cls = "") => el("input", { ...attrs, class: cls, value: r[key],
+      oninput: (e) => { r[key] = e.target.type === "number" ? e.target.value : e.target.value; if (key === "end") r.endTouched = true; touch(key); validateAll(); },
+      onblur: () => { touch(key); validateAll(); } });
+
+    const colIn = input("col", { type: "text", placeholder: "A", maxlength: 3, autocomplete: "off", "data-k": "col" }, "mono");
+    colIn.addEventListener("input", (e) => { e.target.value = e.target.value.toUpperCase(); r.col = e.target.value; });
+    const head = el("div", { class: "rule-head" }, el("b", {}, `Column ${i + 1}`),
+      state.rules.length > 1 ? el("button", { class: "linkbtn", onclick: () => { state.rules = state.rules.filter((x) => x !== r); renderRules(); validateAll(); } }, "Remove") : null);
+
+    const row = el("div", { class: "grid3" },
+      el("div", {}, el("label", { class: "f" }, "Column letter"), colIn, el("div", { class: "err", "data-e": "col" })),
+      el("div", {}, el("label", { class: "f" }, "Start row"), input("start", { type: "number", min: 1, step: 1, "data-k": "start" }, "mono"), el("div", { class: "err", "data-e": "start" })),
+      el("div", {}, el("label", { class: "f" }, "End row"), input("end", { type: "number", min: 1, step: 1, "data-k": "end" }, "mono"), el("div", { class: "err", "data-e": "end" })));
+
+    const seg = el("div", { class: "seg", role: "tablist" },
+      el("button", { class: r.mode === "STRING_SEQ" ? "on" : "", onclick: () => { r.mode = "STRING_SEQ"; renderRules(); validateAll(); } }, "Unique TxnID"),
+      el("button", { class: r.mode === "FIXED" ? "on" : "", onclick: () => { r.mode = "FIXED"; renderRules(); validateAll(); } }, "Fixed date"));
+
+    let logic;
+    if (r.mode === "STRING_SEQ") {
+      const L = state.config.limits;
+      logic = el("div", { class: "narrow" },
+        el("label", { class: "f" }, `TxnID prefix (${L.txn_min}-${L.txn_max} characters)`),
+        input("txnPrefix", { type: "text", maxlength: L.txn_max, placeholder: "e.g. TXNNOV2026", autocomplete: "off", "data-k": "txn" }, "mono"),
+        el("div", { class: "err", "data-e": "txn" }),
+        el("div", { class: "note", "data-n": "txn" }));
+    } else {
+      const sel = el("select", { onchange: (e) => { r.dateFmt = e.target.value; validateAll(); } });
+      for (const f of Object.keys(DATE_FORMATS)) sel.append(el("option", { value: f, ...(f === r.dateFmt ? { selected: "" } : {}) }, f));
+      logic = el("div", {},
+        el("div", { class: "grid2" },
+          el("div", {}, el("label", { class: "f" }, "Date"), input("date", { type: "date", "data-k": "date" })),
+          el("div", {}, el("label", { class: "f" }, "Format"), sel)),
+        el("div", { class: "err", "data-e": "date" }),
+        el("div", { class: "note", "data-n": "date" }));
+    }
+    box.append(el("div", { class: "rule", "data-id": r.id }, head, row, seg, logic));
+  });
+}
+
+/* ---------- validation + summary ---------- */
+function validateAll() {
+  if (!state.upload) return;
+  const problems = [];
+  // batch
+  const n = Number($("nFiles").value);
+  const nOk = Number.isInteger(n) && n >= 1;
+  $("nFilesErr").textContent = nOk ? "" : "Enter a positive whole number.";
+  $("nFiles").classList.toggle("bad", !nOk);
+  if (!nOk) problems.push("Total files must be a positive whole number.");
+
+  const prefix = $("prefix").value.trim();
+  const pErr = prefix ? nameErr(prefix, state.config.limits.prefix_max) : "Required.";
+  $("prefixErr").textContent = prefix ? (pErr || "") : "";
+  $("prefix").classList.toggle("bad", !!(prefix && pErr));
+  const x = $("ext").value;
+  if (!pErr && nOk && state.tracker) {
+    const p = prefix.endsWith("_") ? prefix : prefix + "_";
+    const first = state.tracker.fn_next, last = first - n + 1;
+    $("prefixNote").innerHTML = `Files: <code>${p}${first}${x}</code>${n > 1 ? ` … <code>${p}${last}${x}</code>` : ""}`;
+  } else {
+    $("prefixNote").textContent = `Letters, numbers and underscore, up to ${state.config.limits.prefix_max} characters.`;
+  }
+  if (pErr) problems.push(`Naming prefix: ${pErr}`);
+
+  // rules
+  if (state.rules.length === 0) problems.push("Add at least one column to update.");
+  const seen = new Set();
+  let perFile = 0;
+  state.rules.forEach((r, i) => {
+    const e = ruleErrors(r, seen);
+    if (!e.col) seen.add(r.col.trim().toUpperCase());
+    const card = document.querySelector(`.rule[data-id="${r.id}"]`);
+    if (!card) return;
+    for (const k of ["col", "start", "end", "txn", "date"]) {
+      const box = card.querySelector(`[data-e="${k}"]`);
+      const inp = card.querySelector(`[data-k="${k}"]`);
+      const showIt = e[k] && (r.touched[k === "txn" ? "txnPrefix" : k] || state.triedGenerate);
+      if (box) box.textContent = showIt ? e[k] : "";
+      if (inp) inp.classList.toggle("bad", !!showIt);
+    }
+    for (const k of Object.keys(e)) problems.push(`Column ${i + 1}: ${({ col: "column letter", start: "start row", end: "end row", txn: "TxnID prefix", date: "date" })[k]}: ${e[k]}`);
+    const rows = (!e.start && !e.end) ? Number(r.end) - Number(r.start) + 1 : 0;
+    if (r.mode === "STRING_SEQ") {
+      perFile += rows;
+      const note = card.querySelector('[data-n="txn"]');
+      if (note) note.innerHTML = (!e.txn && rows) ? `Writes <code>${r.txnPrefix.replace(/_+$/, "")}_${state.tracker ? state.tracker.txn_next : "…"}</code> and counts down, ${fmt(rows)} per file.` : "";
+    } else {
+      const note = card.querySelector('[data-n="date"]');
+      if (note) note.innerHTML = r.date ? `Writes <code>${dateString(r)}</code> in rows ${r.start}–${r.end}.` : "";
+    }
+  });
+
+  if (!$("outDir").value.trim()) problems.push("Output folder is required.");
+
+  // counters
+  const t = state.tracker;
+  if (t) {
+    const c = $("counters"); c.innerHTML = "";
+    c.append(el("span", {}, "Next file number ", el("b", {}, String(t.fn_next))));
+    c.append(el("span", {}, "Next TxnID ", el("b", {}, String(t.txn_next))));
+    if (perFile && nOk) c.append(el("span", {}, "This batch uses ", el("b", {}, fmt(perFile * n)), ` TxnIDs (${fmt(perFile)} per file)`));
+    // no negative numbers: the batch must fit in what's left of each counter
+    const low = state.config.limits.lowest;
+    if (nOk && t.fn_next - n + 1 < low)
+      problems.push(`Only ${fmt(Math.max(0, t.fn_next - low + 1))} file numbers are left (next is ${t.fn_next}); numbers can't go below ${low}.`);
+    if (nOk && perFile && t.txn_next - perFile * n + 1 < low)
+      problems.push(`This batch needs ${fmt(perFile * n)} TxnIDs but only ${fmt(Math.max(0, t.txn_next - low + 1))} are left (next is ${t.txn_next}).`);
+  }
+
+  const ready = problems.length === 0 && !state.running;
+  $("genBtn").disabled = !ready;
+  $("genBtn").textContent = state.running ? "Generating…" : (nOk ? `Generate ${fmt(n)} file${n === 1 ? "" : "s"}` : "Generate files");
+  const todo = $("todo"); todo.innerHTML = "";
+  if (!state.running) problems.slice(0, 6).forEach((p) => todo.append(el("li", {}, p)));
+  markDone("s5", nOk && !pErr);
+  markDone("s6", state.rules.length && !problems.some((p) => p.startsWith("Column")));
+}
+["nFiles", "prefix", "outDir"].forEach((id) => $(id).addEventListener("input", validateAll));
+
+/* ---------- generate ---------- */
+function clearResult() { $("run").hidden = true; $("result").hidden = true; $("result").innerHTML = ""; }
+
+$("genBtn").addEventListener("click", async () => {
+  state.triedGenerate = true;
+  validateAll();
+  if ($("genBtn").disabled) return;
+  const payload = {
+    project: $("project").value, token: state.upload.token,
+    n_files: Number($("nFiles").value), naming_prefix: $("prefix").value.trim(),
+    output_dir: $("outDir").value.trim(), parallel: $("parallel").checked,
+    updates: state.rules.map((r) => ({ col: r.col.trim().toUpperCase(), start: Number(r.start), end: Number(r.end),
+      logic: r.mode === "STRING_SEQ" ? { mode: "STRING_SEQ", txn_prefix: r.txnPrefix.trim() } : { mode: "FIXED", value: dateString(r) } })),
+  };
+  clearResult();
+  state.running = true; validateAll();
+  $("run").hidden = false; $("bar").style.width = "0"; $("stageText").textContent = "Starting…"; $("countText").textContent = "";
+  try {
+    const { job } = await api("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    state.job = job;
+    poll(job);
+  } catch (e) {
+    state.running = false;
+    showError(e.data && e.data.errors ? e.data.errors.join("\n") : e.message);
+  }
+});
+
+async function poll(job) {
+  let j;
+  try { j = await api(`/api/job/${job}`); } catch (e) { setTimeout(() => poll(job), 800); return; }
+  const pct = j.total ? (j.done / j.total) * 100 : 0;
+  $("bar").style.width = `${pct}%`;
+  $("stageText").textContent = j.stage || "";
+  $("countText").textContent = j.total ? `${fmt(j.done)} / ${fmt(j.total)}` : "";
+  if (j.status === "done") { state.running = false; showDone(j); return; }
+  if (j.status === "error") { state.running = false; showError(j.error); return; }
+  setTimeout(() => poll(job), 400);
+}
+
+function showError(msg) {
+  $("run").hidden = true;
+  const r = $("result"); r.hidden = false; r.innerHTML = "";
+  r.append(el("div", { class: "banner bad" }, msg));
+  validateAll();
+}
+
+async function showDone(j) {
+  $("bar").style.width = "100%";
+  const s = j.summary;
+  state.tracker = await api(`/api/tracker?project=${encodeURIComponent($("project").value)}`);
+  const r = $("result"); r.hidden = false; r.innerHTML = "";
+  r.append(el("div", { class: "banner ok" }, `✅ ${fmt(j.file_count)} files generated.`));
+  const m = (label, val, cls = "") => el("div", { class: `metric ${cls}` }, el("span", {}, label), el("b", {}, val));
+  r.append(el("div", { class: "metrics" },
+    m("Scan template", `${s.step1.toFixed(2)}s`), m("Tracker setup", `${s.step2.toFixed(2)}s`),
+    m("File generation", `${s.step3.toFixed(2)}s`), m("Total time", `${s.total.toFixed(2)}s`, "total")));
+  const d = el("div", { class: "details" },
+    el("div", {}, "Folder: ", el("span", { class: "pill" }, s.output_dir)),
+    el("div", {}, `Files: ${s.first_file}${j.file_count > 1 ? `  →  ${s.last_file}` : ""}`),
+    s.txn_range ? el("div", {}, `TxnIDs used: ${s.txn_range[0]} down to ${s.txn_range[1]}`) : null,
+    el("div", {}, `Sheet updated: ${s.sheet_name} (everything else is an exact copy of the template)`),
+    el("div", {}, `CPU cores used: ${s.cores}`));
+  r.append(d);
+  r.append(el("div", { class: "actions" },
+    el("a", { class: "btn solid", href: `/api/download/${j.id}` }, "Download all as ZIP"),
+    el("button", { class: "btn", onclick: async (e) => { try { await api("/api/open-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job: j.id }) }); } catch (err) { e.target.textContent = "Couldn't open folder"; } } }, "Open folder"),
+    el("button", { class: "btn", onclick: () => { clearResult(); window.scrollTo({ top: 0, behavior: "smooth" }); } }, "Start another batch")));
+  validateAll();
+}
+
+$("quitBtn").addEventListener("click", async () => {
+  if (state.running && !confirm("A batch is still running. Quit anyway?")) return;
+  try { await api("/api/shutdown", { method: "POST" }); } catch (e) {}
+  document.body.innerHTML = `<div style="max-width:520px;margin:80px auto;padding:20px;font-family:var(--sans)"><h2>App stopped</h2><p style="color:var(--muted)">You can close this tab. Start the app again to create more files.</p></div>`;
+});
+
+init();
+</script>
+</body>
+</html>
