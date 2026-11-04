@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bulk File Generator</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect x=%272%27 y=%272%27 width=%2720%27 height=%2720%27 rx=%275%27 fill=%27%231f6e43%27/%3E%3C/svg%3E">
+<link rel="icon" href="/favicon.ico">
 <style>
   :root {
     --bg: #f4f5f2;
@@ -73,6 +73,12 @@
   .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
   @media (max-width: 620px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
   .narrow { max-width: 420px; }
+  .folder-row { display: flex; gap: 10px; }
+  .folder-row input { flex: 1; min-width: 0; }
+  .folder-row .btn { white-space: nowrap; }
+  .warn { color: var(--warn); }
+  .scan-list { font-family: var(--mono); font-size: 12.5px; margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
+  .seg button { min-height: 34px; }
 
   .err { color: var(--warn); font-size: 12.5px; margin-top: 5px; }
   .note { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
@@ -154,7 +160,7 @@
     </div>
     <div>
       <h1>Bulk File Generator</h1>
-      <p class="sub">Create many Excel files from one template, with unique TxnIDs and fixed values.</p>
+      <p class="sub">Create or update Excel files in bulk, with unique TxnIDs and fixed values.</p>
     </div>
   </div>
   <button class="quit" id="quitBtn" title="Stop the app">Quit app</button>
@@ -186,7 +192,7 @@
     <div class="num">03</div>
     <div class="body">
       <h2>File extension</h2>
-      <p class="hint">The type of file the template is, and the type that will be generated.</p>
+      <p class="hint" id="s3hint">The type of file the template is, and the type that will be generated.</p>
       <div class="narrow"><select id="ext"><option value="">Select an extension…</option></select></div>
     </div>
   </section>
@@ -195,8 +201,19 @@
   <section class="step" id="s4" hidden>
     <div class="num">04</div>
     <div class="body">
-      <h2>Upload template</h2>
-      <p class="hint">Values and styles are copied from the template's active sheet into every generated file.</p>
+      <h2 id="s4title">Upload template</h2>
+      <p class="hint" id="s4hint">Every generated file is an exact copy of this template (all sheets, formatting and formulas). Only the cells you choose in step 6 are changed, on the sheet that was open when the template was last saved.</p>
+      <div id="folderPick" hidden>
+        <label class="f" for="folderPath">Folder with the files</label>
+        <div class="folder-row">
+          <input type="text" id="folderPath" class="mono" placeholder="e.g. C:\Automation\Projects\Netpay\Output\Netpay" autocomplete="off">
+          <button class="btn solid" id="scanBtn">Find files</button>
+        </div>
+        <div class="note">Paste the folder's path (in File Explorer: click the address bar, then copy). Only files directly in this folder are used, not subfolders.</div>
+        <div class="err" id="scanErr"></div>
+        <div id="scanInfo" hidden></div>
+      </div>
+      <div id="uploadPick">
       <div id="dropZone" class="drop" tabindex="0">
         <div><strong>Choose a file</strong> or drag it here</div>
         <div class="note" id="dropHint">.xlsx only</div>
@@ -204,6 +221,7 @@
       <input type="file" id="fileInput" hidden>
       <div id="fileInfo" hidden></div>
       <div class="err" id="uploadErr"></div>
+      </div>
     </div>
   </section>
 
@@ -211,16 +229,24 @@
   <section class="step" id="s5" hidden>
     <div class="num">05</div>
     <div class="body">
-      <h2>Batch settings</h2>
-      <p class="hint">How many files to create and how to name them.</p>
+      <h2 id="s5title">Batch settings</h2>
+      <p class="hint" id="s5hint">How many files to create and how to name them.</p>
+      <div id="whatBox" hidden>
+        <div class="seg" id="whatSeg" style="margin-top:0">
+          <button data-what="names">File names only</button>
+          <button data-what="data">Data only</button>
+          <button data-what="both">File names and data</button>
+        </div>
+        <div class="note" id="whatNote"></div>
+      </div>
       <div class="grid2">
-        <div>
+        <div id="nFilesBox">
           <label class="f" for="nFiles">Total files to create</label>
           <input type="number" id="nFiles" min="1" step="1" value="500" class="mono">
           <div class="err" id="nFilesErr"></div>
         </div>
-        <div>
-          <label class="f" for="prefix">Naming prefix for files</label>
+        <div id="prefixBox">
+          <label class="f" for="prefix" id="prefixLabel">Naming prefix for files</label>
           <input type="text" id="prefix" class="mono" placeholder="e.g. BATCH_NOV" autocomplete="off">
           <div class="err" id="prefixErr"></div>
           <div class="note" id="prefixNote">Letters, numbers and underscore, up to 13 characters.</div>
@@ -234,7 +260,7 @@
     <div class="num">06</div>
     <div class="body">
       <h2>Columns to update</h2>
-      <p class="hint">For each column, choose the rows and what to write: a unique TxnID per row, or a fixed date.</p>
+      <p class="hint">For each column, choose the rows and what to write: a unique TxnID per row, or a fixed date. To update a single cell, use the same row for Start row and End row.</p>
       <div id="rules"></div>
       <button class="addbtn" id="addRule">+ Add column</button>
     </div>
@@ -244,10 +270,20 @@
   <section class="step" id="s7" hidden>
     <div class="num">07</div>
     <div class="body">
-      <h2>Generate</h2>
-      <p class="hint">Files are written to this folder on your computer.</p>
-      <label class="f" for="outDir">Output folder</label>
+      <h2 id="s7title">Generate</h2>
+      <p class="hint" id="s7hint">Files are written to this folder on your computer.</p>
+      <div id="saveBox" hidden>
+        <label class="f">Where to save the updated files</label>
+        <div class="seg" id="saveSeg" style="margin-top:0">
+          <button data-save="in_place">Replace the files in that folder</button>
+          <button data-save="copies">Save updated copies to another folder</button>
+        </div>
+        <div class="note" id="saveNote"></div>
+      </div>
+      <div id="outDirBox">
+      <label class="f" for="outDir" id="outDirLabel">Output folder</label>
       <input type="text" id="outDir" class="mono">
+      </div>
       <label class="check"><input type="checkbox" id="parallel" checked> Use all CPU cores (faster for big batches)</label>
       <div class="counters" id="counters"></div>
       <button class="primary" id="genBtn" disabled>Generate files</button>
@@ -265,8 +301,12 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const state = { config: null, tracker: null, upload: null, rules: [], nextRuleId: 1, job: null, running: false };
-const DATE_FORMATS = { "dd/mm/yyyy": "d/m/Y", "mm/dd/yyyy": "m/d/Y", "yyyy-mm-dd": "Y-m-d" };
+const state = { config: null, tracker: null, upload: null, scan: null, scanStale: false, what: null, save: null,
+  rules: [], nextRuleId: 1, job: null, running: false };
+const isUpdate = () => { const t = $("task").value; return !!(t && state.config.tasks[t] && state.config.tasks[t].kind === "update"); };
+const renaming = () => state.what === "names" || state.what === "both";
+const changingData = () => !isUpdate() || state.what === "data" || state.what === "both";
+const DATE_FORMATS = { "dd/mm/yyyy": "d/m/Y", "dd-mm-yyyy": "d-m-Y", "mm/dd/yyyy": "m/d/Y", "yyyy-mm-dd": "Y-m-d" };
 const NAME_RE = /^[A-Za-z0-9_]+$/;
 
 function el(tag, attrs = {}, ...kids) {
@@ -280,7 +320,12 @@ function el(tag, attrs = {}, ...kids) {
   return n;
 }
 async function api(path, opts = {}) {
-  const r = await fetch(path, opts);
+  let r;
+  try {
+    r = await fetch(path, opts);
+  } catch (e) {          // the app itself can't be reached (it stopped, or the PC is very busy)
+    throw Object.assign(new Error("Can't reach the app. If you closed it or it stopped, start BulkFileGenerator.exe again."), { offline: true });
+  }
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(data.error || (data.errors || []).join("\n") || r.statusText), { data });
   return data;
@@ -309,7 +354,10 @@ function ruleErrors(r, seen) {
     const L = state.config.limits;
     const pe = nameErr(r.txnPrefix, L.txn_max, L.txn_min);
     if (pe) e.txn = pe;
-  } else if (!r.date) e.date = "Pick a date.";
+  } else {
+    if (!r.date) e.date = "Pick a date.";
+    if (r.saveAs !== "text" && r.saveAs !== "date") e.saveas = "Choose whether to save the date as text or as an Excel date.";
+  }
   return e;
 }
 function dateString(r) {
@@ -322,14 +370,41 @@ function dateString(r) {
 function show(id, on) { $(id).hidden = !on; }
 function markDone(id, on) { $(id).classList.toggle("done", !!on); }
 
+function sourceReady() { return isUpdate() ? !!(state.scan && state.scan.count) : !!state.upload; }
+
+function applyMode() {
+  const u = isUpdate();
+  $("s4title").textContent = u ? "Choose folder" : "Upload template";
+  $("s4hint").textContent = u
+    ? "The files to update. Each one keeps everything it has; only what you choose below changes."
+    : "Every generated file is an exact copy of this template (all sheets, formatting and formulas). Only the cells you choose in step 6 are changed, on the sheet that was open when the template was last saved.";
+  $("folderPick").hidden = !u; $("uploadPick").hidden = u;
+  $("s3hint").textContent = u ? "The type of files to update." : "The type of file the template is, and the type that will be generated.";
+  $("s5title").textContent = u ? "What to update" : "Batch settings";
+  $("s5hint").textContent = u ? "Choose what changes in every file in the folder." : "How many files to create and how to name them.";
+  $("whatBox").hidden = !u; $("nFilesBox").hidden = u;
+  $("prefixBox").hidden = u && !renaming();
+  $("prefixBox").style.gridColumn = u ? "1 / -1" : "";     // full width for the rename preview
+  $("prefixLabel").textContent = u ? "New naming prefix" : "Naming prefix for files";
+  $("s7title").textContent = u ? "Update" : "Generate";
+  $("s7hint").textContent = u ? "Choose where the updated files go, then start." : "Files are written to this folder on your computer.";
+  $("saveBox").hidden = !u;
+  $("outDirBox").hidden = u && state.save !== "copies";
+  $("outDirLabel").textContent = u ? "Folder for the updated copies" : "Output folder";
+  document.querySelectorAll("#whatSeg button").forEach((b) => b.classList.toggle("on", b.dataset.what === state.what));
+  document.querySelectorAll("#saveSeg button").forEach((b) => b.classList.toggle("on", b.dataset.save === state.save));
+}
+
 function refreshFlow() {
   const p = $("project").value, t = $("task").value, x = $("ext").value;
+  if (state.config) applyMode();
   markDone("s1", p); show("s2", !!p);
   markDone("s2", p && t); show("s3", !!(p && t));
   markDone("s3", p && t && x); show("s4", !!(p && t && x));
-  const up = !!(p && t && x && state.upload);
+  const up = !!(p && t && x && sourceReady());
   markDone("s4", up);
-  ["s5", "s6", "s7"].forEach((s) => show(s, up));
+  show("s5", up); show("s7", up);
+  show("s6", up && changingData() && (!isUpdate() || !!state.what));
   if (up) validateAll();
 }
 
@@ -341,7 +416,8 @@ async function init() {
     return;
   }
   for (const p of state.config.projects) $("project").append(el("option", { value: p }, p));
-  $("foot").textContent = `Projects and tasks come from ${state.config.config_path}. Edit that file to change the dropdowns.`;
+  $("foot").textContent = state.config.config_path
+    ? `Projects and tasks come from ${state.config.config_path}. Edit that file to change the dropdowns.` : "";
   $("prefixNote").textContent = `Letters, numbers and underscore, up to ${state.config.limits.prefix_max} characters.`;
   refreshFlow();
 }
@@ -360,6 +436,7 @@ $("project").addEventListener("change", async () => {
 });
 $("task").addEventListener("change", () => {
   const t = $("task").value;
+  clearResult();
   $("ext").innerHTML = ""; $("ext").append(el("option", { value: "" }, "Select an extension…"));
   if (t) for (const x of state.config.tasks[t].extensions) $("ext").append(el("option", { value: x }, x));
   refreshFlow();
@@ -369,8 +446,77 @@ $("ext").addEventListener("change", () => {
   $("fileInput").accept = x;
   $("dropHint").textContent = `${x} only`;
   if (state.upload && !state.upload.name.toLowerCase().endsWith(x)) removeUpload();
+  if (state.scan) { state.scan = null; renderScan(); }
   refreshFlow();
 });
+
+/* ---------- folder (update task) ---------- */
+async function scanFolder() {
+  const folder = $("folderPath").value.trim().replace(/^["']|["']$/g, "");
+  $("scanErr").textContent = "";
+  if (!folder) { $("scanErr").textContent = "Paste the folder's path first."; return; }
+  $("scanBtn").disabled = true; $("scanBtn").textContent = "Searching…";
+  try {
+    const res = await api("/api/scan-folder", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder, extension: $("ext").value }) });
+    state.scan = res; state.scanStale = false;
+    if (!res.count) $("scanErr").textContent = `No ${$("ext").value} files found in that folder.`;
+    if (state.rules.length === 0) addRule();
+    else state.rules.forEach((r) => { if (r.endTouched !== true && res.rows_min) r.end = Math.max(2, res.rows_min); });
+    renderRules();
+    clearResult();
+  } catch (e) {
+    state.scan = null; $("scanErr").textContent = e.message;
+  } finally {
+    $("scanBtn").disabled = false; $("scanBtn").textContent = "Find files";
+  }
+  renderScan(); refreshFlow();
+}
+$("scanBtn").addEventListener("click", scanFolder);
+$("folderPath").addEventListener("keydown", (e) => { if (e.key === "Enter") scanFolder(); });
+
+function sheetTable(rows) {
+  const cols = Math.max(...rows.map((r) => r.length));
+  const head = el("tr", {}, el("th", {}, ""));
+  for (let c = 1; c <= cols; c++) head.append(el("th", {}, colLetter(c)));
+  const tbody = el("tbody");
+  rows.forEach((row, i) => {
+    const tr = el("tr", {}, el("td", { class: "rn" }, String(i + 1)));
+    for (let c = 0; c < cols; c++) tr.append(el("td", { title: row[c] || "" }, row[c] || ""));
+    tbody.append(tr);
+  });
+  return el("div", { class: "preview" }, el("table", { class: "sheet" }, el("thead", {}, head), tbody));
+}
+
+function renderScan() {
+  const box = $("scanInfo"); box.innerHTML = "";
+  const sc = state.scan;
+  box.hidden = !sc || !sc.count;
+  if (!sc || !sc.count) return;
+  const mb = (b) => `${(b / 1048576).toFixed(2)} MB`;
+  const rows = sc.rows_min === sc.rows_max ? fmt(sc.rows_min || 0) : `${fmt(sc.rows_min)}–${fmt(sc.rows_max)}`;
+  box.append(el("div", { class: "file-chip", style: "margin-top:12px" },
+    el("span", { class: "name" }, `${fmt(sc.count)} file${sc.count === 1 ? "" : "s"} found`),
+    el("span", { class: "meta" }, `${mb(sc.total_size)} in total · ${rows} rows · sheet ${sc.sheets.join(", ") || "?"}`)));
+  const list = el("ul", { class: "scan-list" });
+  sc.first.forEach((n) => list.append(el("li", {}, n)));
+  if (sc.count > 3) list.append(el("li", {}, `… ${sc.last}`));
+  box.append(list);
+  if (sc.skipped_count) box.append(el("div", { class: "note warn" }, `${sc.skipped_count} file(s) skipped because they aren't readable .xlsx files, e.g. ${sc.skipped[0]}.`));
+  if (sc.rows_min !== sc.rows_max) box.append(el("div", { class: "note warn" }, "The files don't all have the same number of rows. Rows you choose beyond a file's last row are added to that file."));
+  if (state.scanStale) box.append(el("div", { class: "note warn" }, "The folder changed after the last update. Click Find files again before the next one."));
+  if (sc.preview) {
+    box.append(el("div", { class: "note", style: "margin-top:10px" }, `Preview of ${sc.preview.name}:`));
+    box.append(sheetTable(sc.preview.rows));
+  }
+}
+
+document.querySelectorAll("#whatSeg button").forEach((b) => b.addEventListener("click", () => {
+  state.what = b.dataset.what;
+  if (changingData() && state.rules.length === 0) { addRule(); }
+  refreshFlow();
+}));
+document.querySelectorAll("#saveSeg button").forEach((b) => b.addEventListener("click", () => { state.save = b.dataset.save; refreshFlow(); }));
 
 /* ---------- upload ---------- */
 const drop = $("dropZone");
@@ -410,7 +556,7 @@ function renderUpload() {
   const u = state.upload;
   info.append(el("div", { class: "file-chip" },
     el("span", { class: "name" }, u.name),
-    el("span", { class: "meta" }, `${fmt(u.max_row)} rows × ${u.max_col} columns`),
+    el("span", { class: "meta" }, `Sheet "${u.sheet}" · ${fmt(u.max_row)} rows × ${u.max_col} columns`),
     el("button", { class: "linkbtn", onclick: () => removeUpload() }, "Replace")));
   if (u.rows.length) {
     const cols = Math.max(...u.rows.map((r) => r.length));
@@ -431,8 +577,9 @@ function renderUpload() {
 function addRule() {
   const today = new Date();
   const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  state.rules.push({ id: state.nextRuleId++, col: "", start: 2, end: Math.max(2, state.upload ? state.upload.max_row : 2),
-    mode: "STRING_SEQ", txnPrefix: "", date: iso, dateFmt: "dd/mm/yyyy", touched: {} });
+  const lastRow = isUpdate() ? (state.scan && state.scan.rows_min) || 2 : (state.upload ? state.upload.max_row : 2);
+  state.rules.push({ id: state.nextRuleId++, col: "", start: 2, end: Math.max(2, lastRow),
+    mode: "STRING_SEQ", txnPrefix: "", date: iso, dateFmt: "dd/mm/yyyy", saveAs: null, touched: {} });
   renderRules();
 }
 $("addRule").addEventListener("click", () => { addRule(); validateAll(); });
@@ -476,6 +623,13 @@ function renderRules() {
           el("div", {}, el("label", { class: "f" }, "Date"), input("date", { type: "date", "data-k": "date" })),
           el("div", {}, el("label", { class: "f" }, "Format"), sel)),
         el("div", { class: "err", "data-e": "date" }),
+        el("label", { class: "f", style: "margin-top:12px" }, "Save the date as"),
+        el("div", { class: "seg", role: "radiogroup", style: "margin-top:0" },
+          el("button", { class: r.saveAs === "text" ? "on" : "", "data-k": "saveas", title: "Stored as text, like '04/11/2026. Excel shows it exactly as typed.",
+            onclick: () => { r.saveAs = "text"; renderRules(); validateAll(); } }, "Text"),
+          el("button", { class: r.saveAs === "date" ? "on" : "", title: "Stored as a real Excel date (a number) shown in the format above. Excel can sort and calculate with it.",
+            onclick: () => { r.saveAs = "date"; renderRules(); validateAll(); } }, "Excel date")),
+        el("div", { class: "err", "data-e": "saveas" }),
         el("div", { class: "note", "data-n": "date" }));
     }
     box.append(el("div", { class: "rule", "data-id": r.id }, head, row, seg, logic));
@@ -484,58 +638,80 @@ function renderRules() {
 
 /* ---------- validation + summary ---------- */
 function validateAll() {
-  if (!state.upload) return;
+  if (!sourceReady()) return;
+  const upd = isUpdate();
   const problems = [];
+  if (upd) {
+    const notes = { names: "Files get new names (prefix + number). Their contents stay byte-for-byte the same.",
+      data: "The columns you set in step 6 are updated in every file. File names stay the same.",
+      both: "Files get new names and the columns you set in step 6 are updated." };
+    $("whatNote").textContent = state.what ? notes[state.what] : "";
+    if (!state.what) problems.push("Choose what to update: file names, data, or both.");
+    $("saveNote").innerHTML = state.save === "in_place"
+      ? '<span class="warn">The original files are replaced and can\'t be restored by the app. Keep a copy of the folder if you may need the originals.</span>'
+      : state.save === "copies" ? "The original files stay exactly as they are." : "";
+    if (!state.save) problems.push("Choose where to save the updated files.");
+  }
   // batch
-  const n = Number($("nFiles").value);
+  const n = upd ? state.scan.count : Number($("nFiles").value);
   const nOk = Number.isInteger(n) && n >= 1;
   $("nFilesErr").textContent = nOk ? "" : "Enter a positive whole number.";
   $("nFiles").classList.toggle("bad", !nOk);
   if (!nOk) problems.push("Total files must be a positive whole number.");
 
   const prefix = $("prefix").value.trim();
-  const pErr = prefix ? nameErr(prefix, state.config.limits.prefix_max) : "Required.";
+  const needPrefix = !upd || renaming();
+  const pErr = !needPrefix ? null : prefix ? nameErr(prefix, state.config.limits.prefix_max) : "Required.";
   $("prefixErr").textContent = prefix ? (pErr || "") : "";
   $("prefix").classList.toggle("bad", !!(prefix && pErr));
   const x = $("ext").value;
   if (!pErr && nOk && state.tracker) {
     const p = prefix.endsWith("_") ? prefix : prefix + "_";
     const first = state.tracker.fn_next, last = first - n + 1;
-    $("prefixNote").innerHTML = `Files: <code>${p}${first}${x}</code>${n > 1 ? ` … <code>${p}${last}${x}</code>` : ""}`;
+    $("prefixNote").innerHTML = upd && renaming()
+      ? `<code>${state.scan.first[0]}</code> → <code>${p}${first}${x}</code>${n > 1 ? `<br>…<br><code>${state.scan.last}</code> → <code>${p}${last}${x}</code>` : ""}`
+      : `Files: <code>${p}${first}${x}</code>${n > 1 ? ` … <code>${p}${last}${x}</code>` : ""}`;
   } else {
     $("prefixNote").textContent = `Letters, numbers and underscore, up to ${state.config.limits.prefix_max} characters.`;
   }
   if (pErr) problems.push(`Naming prefix: ${pErr}`);
 
   // rules
-  if (state.rules.length === 0) problems.push("Add at least one column to update.");
+  const useRules = changingData();
+  if (useRules && state.rules.length === 0) problems.push("Add at least one column to update.");
   const seen = new Set();
   let perFile = 0;
-  state.rules.forEach((r, i) => {
+  (useRules ? state.rules : []).forEach((r, i) => {
     const e = ruleErrors(r, seen);
     if (!e.col) seen.add(r.col.trim().toUpperCase());
     const card = document.querySelector(`.rule[data-id="${r.id}"]`);
     if (!card) return;
-    for (const k of ["col", "start", "end", "txn", "date"]) {
+    for (const k of ["col", "start", "end", "txn", "date", "saveas"]) {
       const box = card.querySelector(`[data-e="${k}"]`);
       const inp = card.querySelector(`[data-k="${k}"]`);
       const showIt = e[k] && (r.touched[k === "txn" ? "txnPrefix" : k] || state.triedGenerate);
       if (box) box.textContent = showIt ? e[k] : "";
       if (inp) inp.classList.toggle("bad", !!showIt);
     }
-    for (const k of Object.keys(e)) problems.push(`Column ${i + 1}: ${({ col: "column letter", start: "start row", end: "end row", txn: "TxnID prefix", date: "date" })[k]}: ${e[k]}`);
+    for (const k of Object.keys(e)) problems.push(`Column ${i + 1}: ${({ col: "column letter", start: "start row", end: "end row", txn: "TxnID prefix", date: "date", saveas: "date type" })[k]}: ${e[k]}`);
     const rows = (!e.start && !e.end) ? Number(r.end) - Number(r.start) + 1 : 0;
     if (r.mode === "STRING_SEQ") {
       perFile += rows;
       const note = card.querySelector('[data-n="txn"]');
-      if (note) note.innerHTML = (!e.txn && rows) ? `Writes <code>${r.txnPrefix.replace(/_+$/, "")}_${state.tracker ? state.tracker.txn_next : "…"}</code> and counts down, ${fmt(rows)} per file.` : "";
+      if (note) note.innerHTML = (!e.txn && rows) ? (rows === 1
+          ? `Writes one TxnID per file, in cell <code>${r.col.toUpperCase()}${r.start}</code>, starting at <code>${r.txnPrefix.replace(/_+$/, "")}_${state.tracker ? state.tracker.txn_next : "…"}</code>.`
+          : `Writes <code>${r.txnPrefix.replace(/_+$/, "")}_${state.tracker ? state.tracker.txn_next : "…"}</code> and counts down, ${fmt(rows)} per file.`) : "";
     } else {
       const note = card.querySelector('[data-n="date"]');
-      if (note) note.innerHTML = r.date ? `Writes <code>${dateString(r)}</code> in rows ${r.start}–${r.end}.` : "";
+      const how = r.saveAs === "text" ? " as text" : r.saveAs === "date" ? ` as an Excel date (shown as ${r.dateFmt})` : "";
+      if (note) note.innerHTML = r.date ? (Number(r.start) === Number(r.end)
+          ? `Writes <code>${dateString(r)}</code>${how} in cell <code>${r.col.toUpperCase()}${r.start}</code> only.`
+          : `Writes <code>${dateString(r)}</code>${how} in rows ${r.start}–${r.end}.`) : "";
     }
   });
 
-  if (!$("outDir").value.trim()) problems.push("Output folder is required.");
+  if ((!upd || state.save === "copies") && !$("outDir").value.trim()) problems.push(upd ? "Choose the folder for the updated copies." : "Output folder is required.");
+  if (upd && state.scanStale) problems.push("Click Find files again: the folder changed after the last update.");
 
   // counters
   const t = state.tracker;
@@ -544,14 +720,21 @@ function validateAll() {
     c.append(el("span", {}, "Next file number ", el("b", {}, String(t.fn_next))));
     c.append(el("span", {}, "Next TxnID ", el("b", {}, String(t.txn_next))));
     if (perFile && nOk) c.append(el("span", {}, "This batch uses ", el("b", {}, fmt(perFile * n)), ` TxnIDs (${fmt(perFile)} per file)`));
+    // no negative numbers: the batch must fit in what's left of each counter
+    const low = state.config.limits.lowest;
+    if (nOk && (!upd || renaming()) && t.fn_next - n + 1 < low)
+      problems.push(`Only ${fmt(Math.max(0, t.fn_next - low + 1))} file numbers are left (next is ${t.fn_next}); numbers can't go below ${low}.`);
+    if (nOk && perFile && t.txn_next - perFile * n + 1 < low)
+      problems.push(`This batch needs ${fmt(perFile * n)} TxnIDs but only ${fmt(Math.max(0, t.txn_next - low + 1))} are left (next is ${t.txn_next}).`);
   }
 
   const ready = problems.length === 0 && !state.running;
   $("genBtn").disabled = !ready;
-  $("genBtn").textContent = state.running ? "Generating…" : (nOk ? `Generate ${fmt(n)} file${n === 1 ? "" : "s"}` : "Generate files");
+  const verb = upd ? (state.what === "names" ? "Rename" : "Update") : "Generate";
+  $("genBtn").textContent = state.running ? (upd ? "Updating…" : "Generating…") : (nOk ? `${verb} ${fmt(n)} file${n === 1 ? "" : "s"}` : `${verb} files`);
   const todo = $("todo"); todo.innerHTML = "";
   if (!state.running) problems.slice(0, 6).forEach((p) => todo.append(el("li", {}, p)));
-  markDone("s5", nOk && !pErr);
+  markDone("s5", upd ? !!state.what && !pErr : nOk && !pErr);
   markDone("s6", state.rules.length && !problems.some((p) => p.startsWith("Column")));
 }
 ["nFiles", "prefix", "outDir"].forEach((id) => $(id).addEventListener("input", validateAll));
@@ -563,18 +746,23 @@ $("genBtn").addEventListener("click", async () => {
   state.triedGenerate = true;
   validateAll();
   if ($("genBtn").disabled) return;
-  const payload = {
+  const upd = isUpdate();
+  if (upd && state.save === "in_place" && !confirm(`Replace the ${fmt(state.scan.count)} files in\n${state.scan.folder}\nwith the updated versions? The originals can't be restored by the app.`)) return;
+  const updates = changingData() ? state.rules.map((r) => ({ col: r.col.trim().toUpperCase(), start: Number(r.start), end: Number(r.end),
+      logic: r.mode === "STRING_SEQ" ? { mode: "STRING_SEQ", txn_prefix: r.txnPrefix.trim() } : { mode: "FIXED", value: dateString(r), as_text: r.saveAs === "text", iso: r.date, fmt: r.dateFmt } })) : [];
+  const payload = upd ? {
+    project: $("project").value, token: state.scan.token, what: state.what, save_mode: state.save,
+    naming_prefix: $("prefix").value.trim(), output_dir: $("outDir").value.trim(), parallel: $("parallel").checked, updates,
+  } : {
     project: $("project").value, token: state.upload.token,
     n_files: Number($("nFiles").value), naming_prefix: $("prefix").value.trim(),
-    output_dir: $("outDir").value.trim(), parallel: $("parallel").checked,
-    updates: state.rules.map((r) => ({ col: r.col.trim().toUpperCase(), start: Number(r.start), end: Number(r.end),
-      logic: r.mode === "STRING_SEQ" ? { mode: "STRING_SEQ", txn_prefix: r.txnPrefix.trim() } : { mode: "FIXED", value: dateString(r) } })),
+    output_dir: $("outDir").value.trim(), parallel: $("parallel").checked, updates,
   };
   clearResult();
   state.running = true; validateAll();
   $("run").hidden = false; $("bar").style.width = "0"; $("stageText").textContent = "Starting…"; $("countText").textContent = "";
   try {
-    const { job } = await api("/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const { job } = await api(upd ? "/api/update" : "/api/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     state.job = job;
     poll(job);
   } catch (e) {
@@ -607,6 +795,7 @@ async function showDone(j) {
   const s = j.summary;
   state.tracker = await api(`/api/tracker?project=${encodeURIComponent($("project").value)}`);
   const r = $("result"); r.hidden = false; r.innerHTML = "";
+  if (s.mode === "update") return showUpdateDone(j, s, r);
   r.append(el("div", { class: "banner ok" }, `✅ ${fmt(j.file_count)} files generated.`));
   const m = (label, val, cls = "") => el("div", { class: `metric ${cls}` }, el("span", {}, label), el("b", {}, val));
   r.append(el("div", { class: "metrics" },
@@ -616,6 +805,10 @@ async function showDone(j) {
     el("div", {}, "Folder: ", el("span", { class: "pill" }, s.output_dir)),
     el("div", {}, `Files: ${s.first_file}${j.file_count > 1 ? `  →  ${s.last_file}` : ""}`),
     s.txn_range ? el("div", {}, `TxnIDs used: ${s.txn_range[0]} down to ${s.txn_range[1]}`) : null,
+    el("div", {}, `Sheet updated: ${s.sheet_name} (everything else is an exact copy of the template)`),
+    s.template_size ? el("div", {}, s.exact_size === j.file_count
+      ? `File size: every file is exactly ${fmt(s.template_size)} bytes, the same as the template.`
+      : `File size: ${fmt(s.exact_size || 0)} of ${fmt(j.file_count)} files are exactly the template's ${fmt(s.template_size)} bytes; the rest hold more data than the template (e.g. its TxnID or date cells were empty), so they are slightly larger.`) : null,
     el("div", {}, `CPU cores used: ${s.cores}`));
   r.append(d);
   r.append(el("div", { class: "actions" },
@@ -625,11 +818,46 @@ async function showDone(j) {
   validateAll();
 }
 
+function showUpdateDone(j, s, r) {
+  const kb = (b) => `${b >= 0 ? "+" : ""}${fmt(b)} bytes`;
+  const mb = (b) => `${(b / 1048576).toFixed(2)} MB`;
+  const did = s.what === "names" ? "renamed" : "updated";
+  r.append(el("div", { class: "banner ok" }, `✅ ${fmt(s.updated)} file${s.updated === 1 ? "" : "s"} ${did}.`));
+  if (s.failed.length) r.append(el("div", { class: "banner bad", style: "margin-top:8px" },
+    `${s.failed.length} file(s) were left exactly as they were:\n` + s.failed.slice(0, 8).map((f) => `• ${f.name}: ${f.error}`).join("\n")
+    + (s.failed.length > 8 ? `\n… and ${s.failed.length - 8} more` : "")));
+  const m = (label, val, cls = "") => el("div", { class: `metric ${cls}` }, el("span", {}, label), el("b", {}, val));
+  r.append(el("div", { class: "metrics" },
+    m("Files " + did, fmt(s.updated)), m("Size before", mb(s.size_before_total)), m("Size after", mb(s.size_after_total)),
+    m("Total time", `${s.total.toFixed(2)}s`, "total")));
+  const same = s.size_diff_min === 0 && s.size_diff_max === 0;
+  const d = el("div", { class: "details" },
+    el("div", {}, "Folder: ", el("span", { class: "pill" }, s.output_dir)),
+    el("div", {}, same ? "File sizes: every file is exactly the size it was." :
+      `File sizes: each file changed by ${kb(s.size_diff_min)} to ${kb(s.size_diff_max)} (at most ${s.max_diff_pct.toFixed(3)}% of its size).`),
+    s.renames.length ? el("div", {}, `New names: ${s.renames.slice(0, 2).map(([a, b]) => `${a} → ${b}`).join(", ")}${s.updated > 2 ? ", …" : ""}`) : null,
+    s.txn_range ? el("div", {}, `TxnIDs used: ${s.txn_range[0]} down to ${s.txn_range[1]}`) : null,
+    s.sheet_name ? el("div", {}, `Sheet updated: ${s.sheet_name}`) : null,
+    s.save_mode === "copies" ? el("div", {}, `Originals left unchanged in: ${s.source_dir}`) : null);
+  r.append(d);
+  r.append(el("div", { class: "actions" },
+    el("button", { class: "btn solid", onclick: async (e) => { try { await api("/api/open-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job: j.id }) }); } catch (err) { e.target.textContent = "Couldn't open folder"; } } }, "Open folder"),
+    el("a", { class: "btn", href: `/api/download/${j.id}` }, "Download as ZIP")));
+  if (s.save_mode === "in_place") { state.scanStale = true; renderScan(); }
+  validateAll();
+}
+
 $("quitBtn").addEventListener("click", async () => {
   if (state.running && !confirm("A batch is still running. Quit anyway?")) return;
   try { await api("/api/shutdown", { method: "POST" }); } catch (e) {}
-  document.body.innerHTML = `<div style="max-width:520px;margin:80px auto;padding:20px;font-family:var(--sans)"><h2>App stopped</h2><p style="color:var(--muted)">You can close this tab. Start the app again to create more files.</p></div>`;
+  document.body.innerHTML = `<div style="max-width:520px;margin:80px auto;padding:20px;font-family:var(--sans)"><h2>App stopped</h2><p style="color:var(--muted)">You can close this window. Start the app again to create more files.</p></div>`;
+  setTimeout(() => window.close(), 400);   // closes the app window where the browser allows it
 });
+
+// Lets the app know the page is still open (used when it runs in a normal browser tab).
+setInterval(() => { fetch("/api/ping").catch(() => {}); }, 20000);
+fetch("/api/ping").catch(() => {});
+window.addEventListener("pagehide", () => { try { navigator.sendBeacon("/api/bye"); } catch (e) {} });
 
 init();
 </script>
