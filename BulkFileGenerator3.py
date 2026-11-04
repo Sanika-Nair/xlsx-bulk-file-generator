@@ -4,9 +4,13 @@ BulkFileGenerator.py: starts the Bulk File Generator.
 Double-click the .exe (or run `python BulkFileGenerator.py`): a small local
 server starts and the app opens in your web browser. Nothing leaves this computer.
 
-Folders created next to the .exe / script:
-  config.json  - projects, tasks and extensions shown in the dropdowns (edit freely)
-  Tracker/     - per-project counter files
+The project list (config.json) and the page (ui.html) are built INTO the .exe by
+build_exe.bat (see make_bundle.py), so people using the .exe see no .py, .json or
+.html files - not even in Windows' temporary folder while the app runs.
+To change the projects: edit config.json in the build folder and build again.
+
+Folders created next to the .exe:
+  Tracker/     - per-project counter files (the only files users see)
   Output/      - default place for generated files
 """
 import json
@@ -28,6 +32,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import bulk_engine as be
+
+try:
+    import _bundled      # written by make_bundle.py at build time: project list + page, compiled into the .exe
+except ImportError:      # running from source: read config.json and ui.html from this folder
+    _bundled = None
 
 APP_NAME = "Bulk File Generator"
 REQUIRED_ENGINE_VERSION = 6
@@ -75,18 +84,9 @@ DEFAULT_CONFIG = {
 }
 
 
-def load_config():
-    """Reads config.json (projects and tasks for the dropdowns). Built-in tasks that an older
-    config.json doesn't list yet are added to it, keeping the user's projects as they are."""
-    if not os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(DEFAULT_CONFIG, f, indent=2)
-        return json.loads(json.dumps(DEFAULT_CONFIG))
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except Exception:
-        return json.loads(json.dumps(DEFAULT_CONFIG))
+def _complete_config(cfg):
+    """Fills in defaults and any built-in task the config doesn't list yet.
+    Returns (cfg, whether a built-in task had to be added)."""
     cfg.setdefault("projects", DEFAULT_CONFIG["projects"])
     tasks = cfg.setdefault("tasks", {})
     added = False
@@ -97,6 +97,24 @@ def load_config():
     for name, spec in tasks.items():
         spec.setdefault("kind", "update" if name == UPDATE_TASK else "create")
         spec.setdefault("extensions", [".xlsx"])
+    return cfg, added
+
+
+def load_config():
+    """Projects and tasks for the dropdowns. In the .exe they come from inside the .exe
+    (nothing to see or edit next to it); from source, config.json in this folder is used."""
+    if _bundled is not None:
+        return _complete_config(json.loads(json.dumps(_bundled.CONFIG)))[0]
+    if not os.path.exists(CONFIG_PATH):
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(DEFAULT_CONFIG, f, indent=2)
+        return json.loads(json.dumps(DEFAULT_CONFIG))
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception:
+        return json.loads(json.dumps(DEFAULT_CONFIG))
+    cfg, added = _complete_config(cfg)
     if added:
         try:
             with open(CONFIG_PATH, "w", encoding="utf-8") as f:
@@ -209,8 +227,11 @@ class Handler(BaseHTTPRequestHandler):
         p = url.path
 
         if p in ("/", "/index.html"):
-            with open(resource_path("ui.html"), "rb") as f:
-                body = f.read()
+            if _bundled is not None:
+                body = _bundled.UI_HTML.encode("utf-8")
+            else:
+                with open(resource_path("ui.html"), "rb") as f:
+                    body = f.read()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -229,7 +250,7 @@ class Handler(BaseHTTPRequestHandler):
                     "txn_max": be.TXN_PREFIX_MAX,
                     "lowest": be.LOWEST_ALLOWED_NUMBER,
                 },
-                "config_path": CONFIG_PATH,
+                "config_path": None if _bundled is not None else CONFIG_PATH,
             })
 
         if p == "/api/tracker":

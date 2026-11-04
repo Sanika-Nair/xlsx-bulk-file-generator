@@ -379,6 +379,7 @@ function applyMode() {
   $("s5hint").textContent = u ? "Choose what changes in every file in the folder." : "How many files to create and how to name them.";
   $("whatBox").hidden = !u; $("nFilesBox").hidden = u;
   $("prefixBox").hidden = u && !renaming();
+  $("prefixBox").style.gridColumn = u ? "1 / -1" : "";     // full width for the rename preview
   $("prefixLabel").textContent = u ? "New naming prefix" : "Naming prefix for files";
   $("s7title").textContent = u ? "Update" : "Generate";
   $("s7hint").textContent = u ? "Choose where the updated files go, then start." : "Files are written to this folder on your computer.";
@@ -410,7 +411,8 @@ async function init() {
     return;
   }
   for (const p of state.config.projects) $("project").append(el("option", { value: p }, p));
-  $("foot").textContent = `Projects and tasks come from ${state.config.config_path}. Edit that file to change the dropdowns.`;
+  $("foot").textContent = state.config.config_path
+    ? `Projects and tasks come from ${state.config.config_path}. Edit that file to change the dropdowns.` : "";
   $("prefixNote").textContent = `Letters, numbers and underscore, up to ${state.config.limits.prefix_max} characters.`;
   refreshFlow();
 }
@@ -662,7 +664,7 @@ function validateAll() {
     const p = prefix.endsWith("_") ? prefix : prefix + "_";
     const first = state.tracker.fn_next, last = first - n + 1;
     $("prefixNote").innerHTML = upd && renaming()
-      ? `<code>${state.scan.first[0]}</code> → <code>${p}${first}${x}</code>${n > 1 ? ` … <code>${state.scan.last}</code> → <code>${p}${last}${x}</code>` : ""}`
+      ? `<code>${state.scan.first[0]}</code> → <code>${p}${first}${x}</code>${n > 1 ? `<br>…<br><code>${state.scan.last}</code> → <code>${p}${last}${x}</code>` : ""}`
       : `Files: <code>${p}${first}${x}</code>${n > 1 ? ` … <code>${p}${last}${x}</code>` : ""}`;
   } else {
     $("prefixNote").textContent = `Letters, numbers and underscore, up to ${state.config.limits.prefix_max} characters.`;
