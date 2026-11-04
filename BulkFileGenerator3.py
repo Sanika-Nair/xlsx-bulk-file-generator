@@ -2,7 +2,11 @@
 BulkFileGenerator.py: starts the Bulk File Generator.
 
 Double-click the .exe (or run `python BulkFileGenerator.py`): a small local
-server starts and the app opens in your web browser. Nothing leaves this computer.
+server starts and the app opens in its own window (Microsoft Edge or Chrome in
+"app" mode: no address bar, its own taskbar button and icon). Closing the window
+stops the app, after any batch that is still running has finished. Without Edge or
+Chrome it opens in the default browser and stops a few minutes after the tab is closed.
+Nothing leaves this computer.
 
 The project list (config.json) and the page (ui.html) are built INTO the .exe by
 build_exe.bat (see make_bundle.py), so people using the .exe see no .py, .json or
@@ -28,13 +32,16 @@ import traceback
 import uuid
 import webbrowser
 import zipfile
+import base64
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import bulk_engine as be
 
 try:
-    import _bundled      # written by make_bundle.py at build time: project list + page, compiled into the .exe
+    # _bundled.py only exists while build_exe.bat runs (make_bundle.py writes it, then it is packed into
+    # the .exe and deleted), so code editors can't find it. That's expected: the line below tells them so.
+    import _bundled  # type: ignore  # noqa: F401  (project list + page, compiled into the .exe)
 except ImportError:      # running from source: read config.json and ui.html from this folder
     _bundled = None
 
@@ -238,6 +245,23 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
             return
+
+        if p == "/favicon.ico":
+            body = app_icon()
+            if not body:
+                return self._json({"error": "no icon"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/x-icon")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "max-age=86400")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+
+        if p == "/api/ping":
+            global LAST_PING
+            LAST_PING = time.time()
+            return self._json({"ok": True})
 
         if p == "/api/config":
             cfg = load_config()
@@ -490,6 +514,11 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
 
+        if p == "/api/bye":                # sent by the page as its window/tab closes
+            global BYE_AT
+            BYE_AT = time.time()
+            return self._json({"ok": True})
+
         if p == "/api/shutdown":
             self._json({"ok": True})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
@@ -509,8 +538,96 @@ def free_port(preferred=8765):
     return 0
 
 
+LAST_PING = None          # when the page last checked in
+BYE_AT = None             # when the page said it was closing
+IDLE_EXIT_SECONDS = int(os.environ.get("BULKGEN_IDLE_EXIT") or 180)   # stop this long after the last check-in
+
+
+def app_icon():
+    """The app icon (.ico bytes): from inside the .exe, or app.ico next to the script."""
+    if _bundled is not None and getattr(_bundled, "FAVICON_B64", None):
+        return base64.b64decode(_bundled.FAVICON_B64)
+    try:
+        with open(resource_path("app.ico"), "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def find_app_browser():
+    """Microsoft Edge (on every Windows 10/11 PC) or Google Chrome, for a window without
+    an address bar. None if neither is installed."""
+    candidates = []
+    if sys.platform.startswith("win"):
+        for env in ("PROGRAMFILES(X86)", "PROGRAMFILES", "LOCALAPPDATA"):
+            base = os.environ.get(env)
+            if base:
+                candidates += [os.path.join(base, "Microsoft", "Edge", "Application", "msedge.exe"),
+                               os.path.join(base, "Google", "Chrome", "Application", "chrome.exe")]
+    else:
+        for name in ("microsoft-edge", "msedge", "google-chrome", "chromium", "chromium-browser"):
+            found = shutil.which(name)
+            if found:
+                candidates.append(found)
+    return next((c for c in candidates if os.path.isfile(c)), None)
+
+
+def window_profile_dir():
+    """A small private browser profile just for the app window, so it is its own program on
+    the taskbar and closing it can be noticed. Kept in the user's app-data folder."""
+    base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
+    path = os.path.join(base, "BulkFileGenerator", "window")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def open_app_window(url):
+    """Opens the app in its own window. Returns the window's process, or None."""
+    exe = find_app_browser()
+    if not exe:
+        return None
+    args = [exe, f"--app={url}", f"--user-data-dir={window_profile_dir()}",
+            "--no-first-run", "--no-default-browser-check", "--disable-sync",
+            "--window-size=1180,920", "--disable-features=Translate"]
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        return subprocess.Popen(args, creationflags=flags,
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return None
+
+
+def batch_running():
+    return any(j.get("status") in ("queued", "running") for j in JOBS.values())
+
+
+def wait_then_stop(server, window):
+    """Stops the app once its window (or browser tab) is gone, but never in the middle of a batch.
+    Signs that it's gone, whichever comes first:
+      - the page said goodbye when its window closed, and didn't come back within 5 s (a reload comes back);
+      - the app window's process ended (if it ran long enough to be a real window);
+      - the page hasn't checked in for IDLE_EXIT_SECONDS (e.g. the tab was closed while the PC slept)."""
+    opened = time.time()
+    while True:
+        time.sleep(1)
+        now = time.time()
+        last_ping = LAST_PING or started_at
+        gone = (
+            (BYE_AT is not None and BYE_AT >= last_ping and now - BYE_AT > 5)
+            or (window is not None and window.poll() is not None and now - opened > 5
+                and (LAST_PING is None or now - LAST_PING > 25))
+            or now - last_ping > IDLE_EXIT_SECONDS
+        )
+        if gone and not batch_running():
+            server.shutdown()
+            return
+
+
+started_at = time.time()
+
+
 def main():
-    load_config()  # creates config.json on first run
+    load_config()
     mismatch = engine_mismatch()
     if mismatch:
         print("WARNING: " + mismatch)
@@ -518,9 +635,11 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"{APP_NAME} is running at {url}")
-    print("Keep this window open while you use the app. Close it (or click Quit in the app) to stop.")
     if not os.environ.get("BULKGEN_NO_BROWSER"):
-        threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+        window = open_app_window(url)
+        if window is None:                     # no Edge/Chrome: use the default browser
+            threading.Timer(0.8, lambda: webbrowser.open(url)).start()
+        threading.Thread(target=wait_then_stop, args=(server, window), daemon=True).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
