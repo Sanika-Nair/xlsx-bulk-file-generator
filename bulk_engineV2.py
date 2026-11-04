@@ -37,6 +37,7 @@ import openpyxl
 from openpyxl.utils import column_index_from_string, get_column_letter
 
 # --- CONFIGURATION ---
+ENGINE_VERSION = 4               # BulkFileGenerator.py checks this so mismatched files are caught
 MAX_PREFIX_LENGTH = 13
 TXN_PREFIX_MIN, TXN_PREFIX_MAX = 9, 10
 DEFAULT_COUNTER_SEED = 9999999
