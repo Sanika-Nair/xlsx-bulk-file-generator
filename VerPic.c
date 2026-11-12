@@ -88,6 +88,14 @@ VerifyPayments()
             "NotFound=error",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
+        /* sid changes between requests (6777804 -> 6777805), take the latest */
+        web_reg_save_param_ex(
+            "ParamName=Sid",
+            "LB=name=\"sid\" value=\"",              /* TODO: use the same LB/RB as Click_List */
+            "RB=\"",
+            "NotFound=warning",
+            SEARCH_FILTERS, "Scope=Body", LAST);
+
         web_reg_find("Text=iframe", LAST);   /* TODO: better - the "records verified" popup text */
 
         lr_start_transaction("04_SelectAll_Verify");
@@ -210,18 +218,57 @@ VerifyPayments()
 
         lr_start_transaction("05_OK_LoadNextBatch");
 
-        /* TODO: paste your recorded web_submit_data("paymentListingPaginateAction.action_3", ...)
-                 here and replace in it:
-                   struts.token       -> {StrutsToken}
-                   sid                -> {Sid}
-                   filter.fileName    -> {FileName}
-                   filter.pageNumber  -> 1
-                   total_txn          -> {TotalTxn}
-                   total_amt          -> {TotalAmt}
-                   VALUE_DATE         -> {ValueDate}
-                   rand= (if in URL)  -> {Rand}
-                 If its body also has a paymentList, use {PaymentListJson}.
-                 Then delete all the other recorded verify / paginate pairs. */
+        /* new rand for the reload URL */
+        sprintf(g_rand, "%.16f", (double)rand() / (double)RAND_MAX);
+        lr_save_string(g_rand, "Rand");
+
+        /* Same request as paymentListingPaginateAction.action_2 in Click_List.c.
+           Replaces the recorded action_3 ... action_N pairs.
+           TODO: compare once with your recorded action_3 and add any field it has extra. */
+        web_submit_data("paymentListingPaginateAction.action_3",
+            "Action=https://indiaeb.uat.dev.echonet/BNPPNetPayApp/paymentListingPaginateAction.action?rand={Rand}",
+            "Method=POST",
+            "TargetFrame=",
+            "RecContentType=text/html",
+            "Referer=https://indiaeb.uat.dev.echonet/BNPPNetPayApp/verifyPaymentDetailsListAction.action",
+            "Mode=HTML",
+            ITEMDATA,
+            "Name=screenType", "Value=VERIFY", ENDITEM,
+            "Name=roleCode", "Value=", ENDITEM,
+            "Name=editEnable", "Value=N", ENDITEM,
+            "Name=filter.firstLoad", "Value=N", ENDITEM,
+            "Name=filter.sortField", "Value=", ENDITEM,
+            "Name=filter.orderType", "Value=", ENDITEM,
+            "Name=filter.colNumber", "Value=", ENDITEM,
+            "Name=filter.pageNumber", "Value=1", ENDITEM,          /* always page 1 */
+            "Name=filter.selectAll", "Value=N", ENDITEM,
+            "Name=filter.sessionId", "Value=", ENDITEM,
+            "Name=prefEmailListFrame", "Value=", ENDITEM,
+            "Name=sid", "Value={Sid}", ENDITEM,
+            "Name=filter.fileName", "Value={FileName}", ENDITEM,
+            "Name=filter.filterStatus", "Value=30", ENDITEM,
+            "Name=filter.beneName", "Value=", ENDITEM,
+            "Name=filter.accountNumber", "Value=", ENDITEM,
+            "Name=filter.preferredAuthorizer", "Value=", ENDITEM,
+            "Name=todayDate", "Value=", ENDITEM,
+            "Name=filter.uploadDataFrom", "Value=", ENDITEM,
+            "Name=filter.uploadDataTo", "Value=", ENDITEM,
+            "Name=filter.amountFrom", "Value=", ENDITEM,
+            "Name=filter.amountTo", "Value=", ENDITEM,
+            "Name=filter.surveillanceStatus", "Value=", ENDITEM,
+            "Name=filter.makerUserCode", "Value=-1", ENDITEM,
+            "Name=filter.custRefNumber", "Value=", ENDITEM,
+            "Name=filter.additionalInput", "Value=", ENDITEM,
+            "Name=filter.perPage", "Value=1000", ENDITEM,
+            "Name=filter.pageLoad", "Value=Y", ENDITEM,
+            "Name=VALUE_DATE", "Value={ValueDate}", ENDITEM,
+            "Name=TD_CUTOFF_TIME", "Value=18:00", ENDITEM,
+            "Name=CD_CUTOFF_TIME", "Value=18:00", ENDITEM,
+            "Name=FT_CUTOFF_TIME", "Value=", ENDITEM,
+            "Name=custRefNumber", "Value=", ENDITEM,
+            "Name=additionalInput", "Value=", ENDITEM,
+            "Name=additionalDetails", "Value=", ENDITEM,
+            LAST);
 
         lr_end_transaction("05_OK_LoadNextBatch", LR_AUTO);
     }
