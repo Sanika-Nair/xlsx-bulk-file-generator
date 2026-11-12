@@ -14,9 +14,9 @@ VerifyPayments()
     for (g_batch = 1; g_batch <= MAX_BATCHES; g_batch++) {
 
         /* ---------------- rows on the current page ---------------- */
-        g_rows    = atoi(lr_eval_string("{PayInsCode_count}"));
-        g_cntAmt  = atoi(lr_eval_string("{PayAmount_count}"));
-        g_cntBene = atoi(lr_eval_string("{BeneName_count}"));
+        g_rows    = atoi(lr_eval_string("{CV_paymentIds_count}"));
+        g_cntAmt  = atoi(lr_eval_string("{CV_paymentIAmt_count}"));
+        g_cntBene = atoi(lr_eval_string("{CV_paymentIBname_count}"));
 
         if (g_rows == 0) {
             lr_output_message("All records verified: %d rows in %d batch(es)",
@@ -41,9 +41,9 @@ VerifyPayments()
         g_used = 0;
 
         for (g_i = 1; g_i <= g_rows; g_i++)
-            g_cap += strlen(lr_paramarr_idx("PayInsCode", g_i))
-                   + strlen(lr_paramarr_idx("PayAmount",  g_i))
-                   + strlen(lr_paramarr_idx("BeneName",   g_i))
+            g_cap += strlen(lr_paramarr_idx("CV_paymentIds", g_i))
+                   + strlen(lr_paramarr_idx("CV_paymentIAmt",  g_i))
+                   + strlen(lr_paramarr_idx("CV_paymentIBname",   g_i))
                    + 110;                              /* keys, quotes, commas, idx digits */
 
         g_buf = (char *)malloc(g_cap);
@@ -58,9 +58,9 @@ VerifyPayments()
             g_used += sprintf(g_buf + g_used,
                 "%s{\"paymentInsCode\":\"%s\",\"amount\":\"%s\",\"beneName\":\"%s\",\"reason\":\"\",\"idx\":\"%d\"}",
                 (g_i > 1 ? "," : ""),
-                lr_paramarr_idx("PayInsCode", g_i),
-                lr_paramarr_idx("PayAmount",  g_i),
-                lr_paramarr_idx("BeneName",   g_i),
+                lr_paramarr_idx("CV_paymentIds", g_i),
+                lr_paramarr_idx("CV_paymentIAmt",  g_i),
+                lr_paramarr_idx("CV_paymentIBname",   g_i),
                 g_i - 1);                       /* idx = row position on page: 0..999 */
         }
 
@@ -76,13 +76,13 @@ VerifyPayments()
 
         lr_output_message("Batch %d: verifying %d rows (remaining: %s, amount: %s)",
                           g_batch, g_rows,
-                          lr_eval_string("{TotalTxn}"), lr_eval_string("{TotalAmt}"));
+                          lr_eval_string("{CV_total_txn_count}"), lr_eval_string("{CV_total_amt}"));
 
         /* ================= Select All + Verify ================= */
 
         /* token in the Verify response is needed by the OK/reload request */
         web_reg_save_param_ex(
-            "ParamName=StrutsToken",
+            "ParamName=CV_Struts_token0",
             "LB=name=\"struts.token\" value=\"",     /* TODO verify */
             "RB=\"",
             "NotFound=error",
@@ -90,7 +90,7 @@ VerifyPayments()
 
         /* sid changes between requests (6777804 -> 6777805), take the latest */
         web_reg_save_param_ex(
-            "ParamName=Sid",
+            "ParamName=CV_sid_ID_2",
             "LB=name=\"sid\" value=\"",              /* TODO: use the same LB/RB as Click_List */
             "RB=\"",
             "NotFound=warning",
@@ -120,7 +120,7 @@ VerifyPayments()
             "Name=filter.sessionId", "Value=", ENDITEM,
             "Name=prefEmailListFrame", "Value=", ENDITEM,
             /* TODO: line 27 of your recording (hidden in the screenshot) goes here */
-            "Name=sid", "Value={Sid}", ENDITEM,
+            "Name=sid", "Value={CV_sid_ID_2}", ENDITEM,
             "Name=filter.fileName", "Value={FileName}", ENDITEM,
             "Name=filter.filterStatus", "Value=30", ENDITEM,
             "Name=filter.beneName", "Value=", ENDITEM,
@@ -144,11 +144,11 @@ VerifyPayments()
             "Name=additionalInput", "Value=", ENDITEM,
             "Name=additionalDetails", "Value=", ENDITEM,
             "Name=isFxInteractive", "Value=false", ENDITEM,
-            "Name=total_txn", "Value={TotalTxn}", ENDITEM,
-            "Name=total_amt", "Value={TotalAmt}", ENDITEM,
+            "Name=total_txn", "Value={CV_total_txn_count}", ENDITEM,
+            "Name=total_amt", "Value={CV_total_amt}", ENDITEM,
             "Name=shadowConfigBean", "Value={\"shadowConfigBean\":{\"isShadowPeriod\":false,\"shadowPeriodProducts\":[],\"isDirectSubToNetPay\":false}}", ENDITEM,
             "Name=struts.token.name", "Value=struts.token", ENDITEM,
-            "Name=struts.token", "Value={StrutsToken}", ENDITEM,
+            "Name=struts.token", "Value={CV_Struts_token0}", ENDITEM,
             "Name=filter.actionType", "Value=verify_verify", ENDITEM,
             "Name=paymentList", "Value={PaymentListJson}", ENDITEM,
             "Name=rsacodetextbox", "Value=", ENDITEM,
@@ -166,49 +166,49 @@ VerifyPayments()
         /* Captures for the reload response: next batch of rows + next token.
            Same boundaries as in Click_List - keep both copies in sync.        */
         web_reg_save_param_ex(
-            "ParamName=StrutsToken",
+            "ParamName=CV_Struts_token0",
             "LB=name=\"struts.token\" value=\"",
             "RB=\"",
             "NotFound=error",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
         web_reg_save_param_ex(
-            "ParamName=Sid",
+            "ParamName=CV_sid_ID_2",
             "LB=name=\"sid\" value=\"",
             "RB=\"",
             "NotFound=warning",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
         web_reg_save_param_ex(
-            "ParamName=TotalTxn",
+            "ParamName=CV_total_txn_count",
             "LB=name=\"total_txn\" value=\"",
             "RB=\"",
             "NotFound=warning",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
         web_reg_save_param_ex(
-            "ParamName=TotalAmt",
+            "ParamName=CV_total_amt",
             "LB=name=\"total_amt\" value=\"",
             "RB=\"",
             "NotFound=warning",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
         web_reg_save_param_ex(
-            "ParamName=PayInsCode",
+            "ParamName=CV_paymentIds",
             "LB=\"paymentInsCode\":\"",
             "RB=\"",
             "Ordinal=ALL", "NotFound=warning",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
         web_reg_save_param_ex(
-            "ParamName=PayAmount",
+            "ParamName=CV_paymentIAmt",
             "LB=\"amount\":\"",
             "RB=\"",
             "Ordinal=ALL", "NotFound=warning",
             SEARCH_FILTERS, "Scope=Body", LAST);
 
         web_reg_save_param_ex(
-            "ParamName=BeneName",
+            "ParamName=CV_paymentIBname",
             "LB=\"beneName\":\"",
             "RB=\"",
             "Ordinal=ALL", "NotFound=warning",
@@ -244,7 +244,7 @@ VerifyPayments()
             "Name=filter.selectAll", "Value=N", ENDITEM,
             "Name=filter.sessionId", "Value=", ENDITEM,
             "Name=prefEmailListFrame", "Value=", ENDITEM,
-            "Name=sid", "Value={Sid}", ENDITEM,
+            "Name=sid", "Value={CV_sid_ID_2}", ENDITEM,
             "Name=filter.fileName", "Value={FileName}", ENDITEM,
             "Name=filter.filterStatus", "Value=30", ENDITEM,
             "Name=filter.beneName", "Value=", ENDITEM,
