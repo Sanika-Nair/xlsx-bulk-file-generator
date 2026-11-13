@@ -1,0 +1,585 @@
+
+Click_Verify()
+{
+    /* Initial values from Click_List */
+    totalRecords = atoi(
+        lr_eval_string("{CV_total_txn_Count}")
+    );
+
+    remainingTxnCount = totalRecords;
+    verifiedCount = 0;
+    batchNo = 1;
+    failed = 0;
+
+    if (totalRecords <= 0)
+    {
+        lr_error_message(
+            "Invalid initial transaction count: %d",
+            totalRecords
+        );
+        return -1;
+    }
+
+    sprintf(
+        trans,
+        "%s_%02d_Click_Verify",
+        ScriptName,
+        ++ActionCount
+    );
+
+    lr_start_sub_transaction(
+        trans,
+        "SC_02_Verify_Bulk_Payments_FL1_BPT"
+    );
+
+    web_add_auto_header(
+        "Accept-Language",
+        "en-US,en;q=0.9"
+    );
+
+    /* Main batch loop */
+    while (remainingTxnCount > 0)
+    {
+        batchCount = remainingTxnCount > 1000
+            ? 1000
+            : remainingTxnCount;
+
+        lr_output_message(
+            "Batch %d: Remaining=%d, Processing=%d",
+            batchNo,
+            remainingTxnCount,
+            batchCount
+        );
+
+        /* Validate current payment correlations */
+        capturedIds = atoi(
+            lr_eval_string("{CV_paymentIds_count}")
+        );
+
+        capturedAmounts = atoi(
+            lr_eval_string("{CV_paymentIAmt_count}")
+        );
+
+        capturedNames = atoi(
+            lr_eval_string("{CV_paymentIBname_count}")
+        );
+
+        if (capturedIds != batchCount ||
+            capturedAmounts != batchCount ||
+            capturedNames != batchCount)
+        {
+            lr_error_message(
+                "Batch %d: Correlation mismatch. "
+                "Expected=%d IDs=%d Amounts=%d Names=%d",
+                batchNo,
+                batchCount,
+                capturedIds,
+                capturedAmounts,
+                capturedNames
+            );
+
+            failed = 1;
+            break;
+        }
+
+        /* Build paymentList request body */
+        finalStr[0] = '\0';
+        used = 0;
+
+        written = snprintf(
+            finalStr,
+            sizeof(finalStr),
+            "{\"paymentList\":["
+        );
+
+        if (written < 0 ||
+            (size_t)written >= sizeof(finalStr))
+        {
+            lr_error_message("JSON header overflow");
+            failed = 1;
+            break;
+        }
+
+        used = (size_t)written;
+
+        for (k = 1; k <= batchCount; k++)
+        {
+            sprintf(
+                paramName,
+                "{CV_paymentIds_%d}",
+                k
+            );
+            paymentId = lr_eval_string(paramName);
+
+            sprintf(
+                paramName,
+                "{CV_paymentIAmt_%d}",
+                k
+            );
+            paymentAmt = lr_eval_string(paramName);
+
+            sprintf(
+                paramName,
+                "{CV_paymentIBname_%d}",
+                k
+            );
+            beneName = lr_eval_string(paramName);
+
+            written = snprintf(
+                str,
+                sizeof(str),
+                "%s{\"paymentInsCode\":\"%s\","
+                "\"amount\":\"%s\","
+                "\"beneName\":\"%s\","
+                "\"reason\":\"\"}",
+                k > 1 ? "," : "",
+                paymentId,
+                paymentAmt,
+                beneName
+            );
+
+            if (written < 0 ||
+                (size_t)written >= sizeof(str) ||
+                used + (size_t)written >= sizeof(finalStr))
+            {
+                lr_error_message(
+                    "Buffer overflow in batch %d",
+                    batchNo
+                );
+                failed = 1;
+                break;
+            }
+
+            memcpy(
+                finalStr + used,
+                str,
+                (size_t)written + 1
+            );
+
+            used += (size_t)written;
+        }
+
+        if (failed)
+            break;
+
+        written = snprintf(
+            finalStr + used,
+            sizeof(finalStr) - used,
+            "]}"
+        );
+
+        if (written < 0 ||
+            (size_t)written >= sizeof(finalStr) - used)
+        {
+            lr_error_message("JSON closing overflow");
+            failed = 1;
+            break;
+        }
+
+        lr_save_string(finalStr, "RequestBody");
+
+        /* Register Verify response checks */
+        web_reg_find(
+            "Text=successfully verified",
+            "SaveCount=savecount",
+            LAST
+        );
+
+        web_reg_save_param_regexp(
+            "ParamName=CV_Struts_Token_2",
+            "RegExp=\"token\":\"(.*?)\"",
+            "Ordinal=1",
+            SEARCH_FILTERS,
+            LAST
+        );
+
+        /* Request 1: Verify payments */
+        rc = web_submit_data(
+            "verifyPaymentsLegAction.action",
+            "Action={PV_URL}/BNPPNetPayApp/verifyPaymentsLegAction.action?rand=0.5387319505680352",
+            "Method=POST",
+            "TargetFrame=",
+            "RecContentType=text/html",
+            "Referer={PV_URL}/BNPPNetPayApp/verifyPaymentDetailsListAction.action",
+            "Snapshot=t10.inf",
+            "Mode=HTML",
+            ITEMDATA,
+            "Name=screenType", "Value=VERIFY", ENDITEM,
+            "Name=roleCode", "Value=", ENDITEM,
+            "Name=editEnable", "Value=N", ENDITEM,
+            "Name=filter.firstLoad", "Value=N", ENDITEM,
+            "Name=filter.sortField", "Value=", ENDITEM,
+            "Name=filter.orderType", "Value=", ENDITEM,
+            "Name=filter.colNumber", "Value=", ENDITEM,
+            "Name=filter.pageNumber", "Value=1", ENDITEM,
+            "Name=filter.selectAll", "Value=N", ENDITEM,
+            "Name=filter.sessionId", "Value=", ENDITEM,
+            "Name=prefEmailListFrame", "Value=", ENDITEM,
+            "Name=sid", "Value={CV_sid_ID_2}", ENDITEM,
+            "Name=filter.fileName", "Value={VTS_RetrievedValue}.xlsx", ENDITEM,
+            "Name=filter.filterStatus", "Value=30", ENDITEM,
+            "Name=filter.beneName", "Value=", ENDITEM,
+            "Name=filter.accountNumber", "Value=", ENDITEM,
+            "Name=filter.preferredAuthorizer", "Value=", ENDITEM,
+            "Name=todayDate", "Value=", ENDITEM,
+            "Name=filter.uploadDataFrom", "Value=", ENDITEM,
+            "Name=filter.uploadDataTo", "Value=", ENDITEM,
+            "Name=filter.amountFrom", "Value=", ENDITEM,
+            "Name=filter.amountTo", "Value=", ENDITEM,
+            "Name=filter.surveillanceStatus", "Value=", ENDITEM,
+            "Name=filter.makerUserCode", "Value=-1", ENDITEM,
+            "Name=filter.custRefNumber", "Value=", ENDITEM,
+            "Name=filter.additionalInput", "Value=", ENDITEM,
+            "Name=filter.perPage", "Value=1000", ENDITEM,
+            "Name=filter.pageLoad", "Value=N", ENDITEM,
+            "Name=VALUE_DATE", "Value={PV_ValueDate}", ENDITEM,
+            "Name=TD_CUTOFF_TIME", "Value=23:30", ENDITEM,
+            "Name=CD_CUTOFF_TIME", "Value=23:30", ENDITEM,
+            "Name=custRefNumber", "Value=", ENDITEM,
+            "Name=additionalInput", "Value=", ENDITEM,
+            "Name=additionalDetails", "Value=", ENDITEM,
+            "Name=isFxInteractive", "Value=true", ENDITEM,
+            "Name=total_txn", "Value={CV_total_txn_Count}", ENDITEM,
+            "Name=total_amt", "Value={CV_total_amt}", ENDITEM,
+            "Name=shadowConfigBean", "Value={\"isShadowConfigBean\":{\"isShadowPeriod\":false,\"shadowPeriodProducts\":[],\"isDirectSubToNetPay\":false}}", ENDITEM,
+            "Name=struts.token.name", "Value=struts.token", ENDITEM,
+            "Name=struts.token", "Value={CV_Struts_Token3}", ENDITEM,
+            "Name=filter.actionType", "Value=verify_verify", ENDITEM,
+            "Name=paymentList", "Value={RequestBody}", ENDITEM,
+            "Name=rsacodetextbox", "Value=", ENDITEM,
+            "Name=vascotextbox1", "Value=", ENDITEM,
+            "Name=vascotextbox2", "Value=", ENDITEM,
+            "Name=allAction", "Value=N", ENDITEM,
+            LAST
+        );
+
+        if (rc != LR_PASS ||
+            atoi(lr_eval_string("{savecount}")) < 1)
+        {
+            lr_error_message(
+                "Verify failed in batch %d. rc=%d savecount=%s",
+                batchNo,
+                rc,
+                lr_eval_string("{savecount}")
+            );
+
+            failed = 1;
+            break;
+        }
+
+        verifiedCount += batchCount;
+        remainingTxnCount = totalRecords - verifiedCount;
+
+        lr_output_message(
+            "Batch %d verified. Total=%d Remaining=%d",
+            batchNo,
+            verifiedCount,
+            remainingTxnCount
+        );
+
+        /* Final batch: no pagination needed */
+        if (remainingTxnCount == 0)
+        {
+            lr_output_message(
+                "All %d records verified",
+                verifiedCount
+            );
+            break;
+        }
+
+        /* Correlate next batch from pagination response */
+        web_reg_save_param(
+            "CV_next_total_txn_Count",
+            "LB=align='center' >",
+            "RB= payment(s) totaling",
+            LAST
+        );
+
+        web_reg_save_param(
+            "CV_next_total_amt",
+            "LB=payment(s) totaling Rs:",
+            "RB= retrieved.</td></tr>",
+            LAST
+        );
+
+        web_reg_save_param(
+            "CV_sid_ID_3",
+            "LB=\\\"error\\\":false,\\\"sid\\\":",
+            "RB=,\\\"paymentTicker",
+            LAST
+        );
+
+        web_reg_save_param(
+            "CV_next_paymentIds",
+            "LB=<input name='paymentIds' value='",
+            "RB=' pm=",
+            "Ord=All",
+            LAST
+        );
+
+        web_reg_save_param(
+            "CV_next_paymentIAmt",
+            "LB= value='",
+            "RB=' /> <input type='hidden' name='bName'",
+            "Ord=All",
+            LAST
+        );
+
+        web_reg_save_param(
+            "CV_next_paymentIBname",
+            "LB=<a style='width: 100px; display: block;word-break: break-word;'>",
+            "RB= </a> </td>",
+            "Ord=All",
+            LAST
+        );
+
+        /* Request 2: Retrieve next batch */
+        rc = web_submit_data(
+            "paymentListingPaginateAction.action_3",
+            "Action={PV_URL}/BNPPNetPayApp/paymentListingPaginateAction.action?rand=0.5857200270984322",
+            "Method=POST",
+            "TargetFrame=",
+            "RecContentType=text/html",
+            "Referer={PV_URL}/BNPPNetPayApp/verifyPaymentDetailsListAction.action",
+            "Snapshot=t11.inf",
+            "Mode=HTML",
+            ITEMDATA,
+            "Name=screenType", "Value=VERIFY", ENDITEM,
+            "Name=roleCode", "Value=", ENDITEM,
+            "Name=editEnable", "Value=N", ENDITEM,
+            "Name=filter.firstLoad", "Value=N", ENDITEM,
+            "Name=filter.sortField", "Value=", ENDITEM,
+            "Name=filter.orderType", "Value=", ENDITEM,
+            "Name=filter.colNumber", "Value=", ENDITEM,
+            "Name=filter.pageNumber", "Value=1", ENDITEM,
+            "Name=filter.selectAll", "Value=N", ENDITEM,
+            "Name=filter.sessionId", "Value=", ENDITEM,
+            "Name=prefEmailListFrame", "Value=", ENDITEM,
+            "Name=sid", "Value={CV_sid_ID_2}", ENDITEM,
+            "Name=filter.fileName", "Value={VTS_RetrievedValue}.xlsx", ENDITEM,
+            "Name=filter.filterStatus", "Value=30", ENDITEM,
+            "Name=filter.beneName", "Value=", ENDITEM,
+            "Name=filter.accountNumber", "Value=", ENDITEM,
+            "Name=filter.preferredAuthorizer", "Value=", ENDITEM,
+            "Name=todayDate", "Value=", ENDITEM,
+            "Name=filter.uploadDataFrom", "Value=", ENDITEM,
+            "Name=filter.uploadDataTo", "Value=", ENDITEM,
+            "Name=filter.amountFrom", "Value=", ENDITEM,
+            "Name=filter.amountTo", "Value=", ENDITEM,
+            "Name=filter.surveillanceStatus", "Value=", ENDITEM,
+            "Name=filter.makerUserCode", "Value=-1", ENDITEM,
+            "Name=filter.custRefNumber", "Value=", ENDITEM,
+            "Name=filter.additionalInput", "Value=", ENDITEM,
+            "Name=filter.perPage", "Value=1000", ENDITEM,
+            "Name=filter.pageLoad", "Value=N", ENDITEM,
+            "Name=VALUE_DATE", "Value={PV_ValueDate}", ENDITEM,
+            "Name=TD_CUTOFF_TIME", "Value=18:00", ENDITEM,
+            "Name=CD_CUTOFF_TIME", "Value=18:00", ENDITEM,
+            "Name=FT_CUTOFF_TIME", "Value=", ENDITEM,
+            "Name=custRefNumber", "Value=", ENDITEM,
+            "Name=additionalInput", "Value=", ENDITEM,
+            "Name=additionalDetails", "Value=", ENDITEM,
+            LAST
+        );
+
+        /* Validate pagination request */
+        if (rc != LR_PASS)
+        {
+            lr_error_message(
+                "Pagination request failed in batch %d",
+                batchNo
+            );
+
+            failed = 1;
+            break;
+        }
+
+        /* Read newly captured counts BEFORE modifying them */
+        idCount = atoi(
+            lr_eval_string("{CV_next_paymentIds_count}")
+        );
+
+        amtCount = atoi(
+            lr_eval_string("{CV_next_paymentIAmt_count}")
+        );
+
+        nameCount = atoi(
+            lr_eval_string("{CV_next_paymentIBname_count}")
+        );
+
+        lr_output_message(
+            "Next batch correlations: IDs=%d Amounts=%d Names=%d",
+            idCount,
+            amtCount,
+            nameCount
+        );
+
+        /* Validate next batch record counts */
+        batchCount = remainingTxnCount > 1000
+            ? 1000
+            : remainingTxnCount;
+
+        if (idCount != batchCount ||
+            amtCount != batchCount ||
+            nameCount != batchCount)
+        {
+            lr_error_message(
+                "Batch %d: Next batch mismatch. "
+                "Expected=%d IDs=%d Amounts=%d Names=%d",
+                batchNo,
+                batchCount,
+                idCount,
+                amtCount,
+                nameCount
+            );
+
+            failed = 1;
+            break;
+        }
+
+        /* Copy next batch values to current batch parameters */
+        for (k = 1; k <= idCount; k++)
+        {
+            sprintf(
+                source,
+                "{CV_next_paymentIds_%d}",
+                k
+            );
+
+            sprintf(
+                target,
+                "CV_paymentIds_%d",
+                k
+            );
+
+            lr_save_string(
+                lr_eval_string(source),
+                target
+            );
+
+            sprintf(
+                source,
+                "{CV_next_paymentIAmt_%d}",
+                k
+            );
+
+            sprintf(
+                target,
+                "CV_paymentIAmt_%d",
+                k
+            );
+
+            lr_save_string(
+                lr_eval_string(source),
+                target
+            );
+
+            sprintf(
+                source,
+                "{CV_next_paymentIBname_%d}",
+                k
+            );
+
+            sprintf(
+                target,
+                "CV_paymentIBname_%d",
+                k
+            );
+
+            lr_save_string(
+                lr_eval_string(source),
+                target
+            );
+        }
+
+        /* Update current batch counts */
+        sprintf(source, "%d", idCount);
+        lr_save_string(
+            source,
+            "CV_paymentIds_count"
+        );
+
+        sprintf(source, "%d", amtCount);
+        lr_save_string(
+            source,
+            "CV_paymentIAmt_count"
+        );
+
+        sprintf(source, "%d", nameCount);
+        lr_save_string(
+            source,
+            "CV_paymentIBname_count"
+        );
+
+        lr_output_message(
+            "Batch %d: Copied %d records for next Verify",
+            batchNo,
+            idCount
+        );
+
+        /* Diagnostic: server count may have different semantics */
+        nextRemaining = atoi(
+            lr_eval_string("{CV_next_total_txn_Count}")
+        );
+
+        lr_output_message(
+            "Batch %d: Calculated remaining=%d, Server count=%d",
+            batchNo,
+            remainingTxnCount,
+            nextRemaining
+        );
+
+        /* Update SID for BOTH requests in next batch */
+        lr_save_string(
+            lr_eval_string("{CV_sid_ID_3}"),
+            "CV_sid_ID_2"
+        );
+
+        /* Update Struts token from Verify response */
+        lr_save_string(
+            lr_eval_string("{CV_Struts_Token_2}"),
+            "CV_Struts_Token3"
+        );
+
+        lr_output_message(
+            "Batch %d completed. Verified=%d Remaining=%d",
+            batchNo,
+            verifiedCount,
+            remainingTxnCount
+        );
+
+        batchNo++;
+    }
+
+    /* Handle failure */
+    if (failed)
+    {
+        lr_end_sub_transaction(
+            trans,
+            LR_FAIL
+        );
+
+        return -1;
+    }
+
+    /* Final success handling */
+    VTS_ErrorHandling();
+
+    /* Update VTS only after complete file verification */
+    lrvts_send_row1(
+        "VerifiedFilename_{PV_Groupcode}",
+        lr_eval_string(
+            lr_eval_string(
+                "{UploadedFilename_{PV_Groupcode}}"
+            )
+        ),
+        VTSEND_SAME_ROW
+    );
+
+    lr_output_message(
+        "File verification complete: %d records",
+        verifiedCount
+    );
+
+    return 0;
+}
